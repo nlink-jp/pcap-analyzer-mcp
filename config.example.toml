@@ -1,0 +1,46 @@
+# pcap-analyzer-mcp configuration.
+#
+# Every value below is a default — an absent config.toml is a valid
+# configuration. Copy this file only to change something.
+#
+# Location: pass --config <path>, or set PCAP_ANALYZER_MCP_CONFIG.
+
+[container]
+# The analysis image, built locally by `pcap-analyzer-mcp build-runtime`.
+# Pin by digest for reproducible results (ADR-0003); the tag below is what a
+# fresh local build produces.
+image = "localhost/pcap-analyzer-runtime:latest"
+
+[container.limits]
+cpu = "2"
+memory = "4g"
+# "none" keeps the analysis container off the network entirely, which is also
+# what makes live capture impossible by construction. "bridge" is accepted but
+# has no legitimate use for read-only capture analysis.
+network = "none"
+
+[workspace]
+# A guardrail, not a sandbox boundary (ADR-0004). Empty means any readable
+# file may be opened as a capture. Set this when the server is not for your
+# eyes only. Entries must be absolute; a leading ~ is expanded.
+allowed_paths = []
+
+[output]
+# Results larger than this many serialized bytes are written to the workspace
+# as JSONL instead of being returned inline. Bytes rather than rows, because a
+# payload column makes row counts meaningless (ADR-0005).
+inline_max_bytes = 65536
+default_row_limit = 10000
+# Leading rows attached to a file-backed result so the agent never needs a
+# round trip just to learn the shape of the data.
+sample_rows = 5
+
+[payload]
+# Payload-returning tools are bounded separately (ADR-0007).
+follow_inline_max_bytes = 8192
+extract_max_object_bytes = 104857600  # 100 MiB
+
+[log]
+level = "info"          # debug | info | warn | error
+# file = "~/.local/state/pcap-analyzer-mcp/server.log"
+# Payload bytes are never written to the log, at any level.
