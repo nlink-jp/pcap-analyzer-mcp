@@ -61,6 +61,8 @@ func (d *Deps) all() []registration {
 		d.protocolHierarchy(),
 		d.listConversations(),
 		d.queryPackets(),
+		d.followStream(),
+		d.extractObjects(),
 		d.checkJob(),
 	}
 }

@@ -11,10 +11,10 @@ runs a **version-pinned tshark inside a container**, mounts the capture
 workspace as JSONL — so an agent can narrow down a GB-scale capture step by
 step instead of drowning in its first response.
 
-> **Status: pre-release, read-only edition working.** Nine tools are
-> implemented and driven end to end against a real container: open a capture,
-> inspect it, list conversations, and query packets. `follow_stream` and
-> `extract_objects` are not built yet, and neither is async job support.
+> **Status: pre-release, feature-complete.** All twelve tools work and have
+> been driven end to end against a real container, payload extraction
+> included. Still to come before a release: a security review of the payload
+> path, and validation against a real MCP client.
 
 ## Why a container
 

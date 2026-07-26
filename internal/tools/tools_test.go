@@ -106,8 +106,8 @@ func TestEverySchemaIsAValidObjectSchema(t *testing.T) {
 			t.Errorf("%s: inputSchema has no properties", r.desc.Name)
 		}
 	}
-	if len(names) != 10 {
-		t.Errorf("registered %d tools, want 10", len(names))
+	if len(names) != 12 {
+		t.Errorf("registered %d tools, want 12", len(names))
 	}
 }
 
@@ -116,7 +116,7 @@ func TestRegisterInstallsEveryTool(t *testing.T) {
 	Register(srv, newDeps(&fakeRunner{}))
 	// Registering twice would panic or duplicate; just assert it completed and
 	// the registry is the same size as all().
-	if got := len(newDeps(&fakeRunner{}).all()); got != 10 {
+	if got := len(newDeps(&fakeRunner{}).all()); got != 12 {
 		t.Errorf("all() = %d", got)
 	}
 }

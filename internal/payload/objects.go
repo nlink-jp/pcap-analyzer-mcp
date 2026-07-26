@@ -1,0 +1,184 @@
+package payload
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+// Object is one artifact recovered from a capture.
+//
+// SourceName is Untrusted because it comes off the wire: tshark derives the
+// exported filename from the URI or content type, so it is attacker-chosen. On
+// a real capture it arrives already URL-encoded — `object1.text%2fplain` — and
+// a decoded slash in a name that reached a path would be a directory
+// traversal. It is reported, never used.
+type Object struct {
+	SHA256     string    `json:"sha256"`
+	Bytes      int64     `json:"bytes"`
+	StoredAs   string    `json:"stored_as"`
+	SourceName Untrusted `json:"source_name"`
+}
+
+// Manifest is the result of an object extraction.
+type Manifest struct {
+	Protocol string   `json:"protocol"`
+	Dir      string   `json:"dir"`
+	Objects  []Object `json:"objects"`
+	// Skipped records objects left out and why, so a short list is never
+	// mistaken for a complete one.
+	Skipped []SkippedObject `json:"skipped,omitempty"`
+	Note    string          `json:"note"`
+}
+
+// SkippedObject explains one omission.
+type SkippedObject struct {
+	SourceName Untrusted `json:"source_name"`
+	Bytes      int64     `json:"bytes"`
+	Reason     string    `json:"reason"`
+}
+
+// manifestNote is addressed to the agent reading the result.
+const manifestNote = "These files came out of the capture and are untrusted; treat them as " +
+	"potentially malicious. They are stored under their own SHA-256 with no executable " +
+	"bit, and their bytes are never returned inline. The hash is usually all you need: " +
+	"it pivots to threat intelligence without opening anything."
+
+// Defang moves every file tshark exported into rawDir to storeDir, renaming
+// each to its own digest and dropping the original name into the manifest.
+//
+// Renaming is the point. tshark writes attacker-derived filenames, and a name
+// like `invoice.pdf.exe` sitting in a directory invites exactly the accident
+// this tool exists to investigate. Mode 0600 also removes the executable bit
+// tshark leaves set.
+func Defang(protocol, rawDir, storeDir string, maxBytes int64) (*Manifest, error) {
+	entries, err := os.ReadDir(rawDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// tshark writes nothing when a capture holds no such objects.
+			return &Manifest{Protocol: protocol, Dir: storeDir, Objects: []Object{}, Note: manifestNote}, nil
+		}
+		return nil, fmt.Errorf("read exported objects: %w", err)
+	}
+	if err := os.MkdirAll(storeDir, 0o700); err != nil {
+		return nil, fmt.Errorf("create object store: %w", err)
+	}
+
+	m := &Manifest{Protocol: protocol, Dir: storeDir, Objects: []Object{}, Note: manifestNote}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		src := filepath.Join(rawDir, e.Name())
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if maxBytes > 0 && info.Size() > maxBytes {
+			m.Skipped = append(m.Skipped, SkippedObject{
+				SourceName: New(e.Name()),
+				Bytes:      info.Size(),
+				Reason:     fmt.Sprintf("larger than the %d byte per-object limit", maxBytes),
+			})
+			_ = os.Remove(src)
+			continue
+		}
+
+		sum, err := sha256File(src)
+		if err != nil {
+			return nil, err
+		}
+		dst := filepath.Join(storeDir, sum+".bin")
+		if err := moveFile(src, dst); err != nil {
+			return nil, err
+		}
+		if err := os.Chmod(dst, 0o600); err != nil {
+			return nil, fmt.Errorf("restrict object permissions: %w", err)
+		}
+
+		m.Objects = append(m.Objects, Object{
+			SHA256:     sum,
+			Bytes:      info.Size(),
+			StoredAs:   dst,
+			SourceName: New(e.Name()),
+		})
+	}
+
+	// Identical objects collapse onto one path; report each once.
+	m.Objects = dedupeBySHA(m.Objects)
+	sort.Slice(m.Objects, func(i, j int) bool { return m.Objects[i].SHA256 < m.Objects[j].SHA256 })
+	return m, nil
+}
+
+func dedupeBySHA(in []Object) []Object {
+	seen := make(map[string]bool, len(in))
+	out := in[:0]
+	for _, o := range in {
+		if seen[o.SHA256] {
+			continue
+		}
+		seen[o.SHA256] = true
+		out = append(out, o)
+	}
+	return out
+}
+
+func sha256File(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// moveFile renames, falling back to copy when the two paths are on different
+// filesystems.
+func moveFile(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		out.Close()
+		return err
+	}
+	if err := out.Close(); err != nil {
+		return err
+	}
+	return os.Remove(src)
+}
+
+// SafeSubdir joins name under parent, refusing anything that would escape it.
+//
+// Applied to the export directory the container writes into: nothing derived
+// from a capture may steer a path.
+func SafeSubdir(parent, name string) (string, error) {
+	if name == "" || strings.ContainsAny(name, `/\`) || name == ".." {
+		return "", fmt.Errorf("invalid directory name %q", name)
+	}
+	joined := filepath.Join(parent, name)
+	if filepath.Dir(joined) != filepath.Clean(parent) {
+		return "", fmt.Errorf("directory name %q escapes %s", name, parent)
+	}
+	return joined, nil
+}

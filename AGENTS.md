@@ -10,9 +10,10 @@ network-less container; the capture is mounted **read-only and never copied**.
 Results come back inline when small and as JSONL files in the workspace when
 large.
 
-**Status: Phase 1 Tracks A–F complete.** `serve` registers ten tools, including
-async execution with `check_job`, all driven end to end against real podman.
-Only Track G is left, so `follow_stream` and `extract_objects` do not exist yet.
+**Status: Phase 1 complete (Tracks A–G).** All twelve tools are implemented and
+driven end to end against real podman, payload extraction included. What
+remains before a release is the Track G security review and Phase 2 (real-client
+validation, samples, client-setup docs).
 
 ## Build / test
 
@@ -43,8 +44,8 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 | `internal/tshark/` | tshark argument assembly and output parsing | E ✅ |
 | `internal/output/` | The output contract: byte threshold, `matched`, `sample`, JSONL | E ✅ |
 | `internal/job/` | Async jobs + `check_job`, with a concurrency cap | F ✅ |
-| `internal/payload/` | Nonce XML isolation, defang | G |
-| `internal/tools/` | Tool handlers — 9 registered; payload tools land in G | E ✅, G |
+| `internal/payload/` | Untrusted (self-redacting), nonce framing, object defang | G ✅ |
+| `internal/tools/` | All twelve tool handlers | E ✅, G ✅ |
 | `testdata/gen/` | gopacket fixture generators (synthetic captures only) | H |
 | `e2e/` | Dummy MCP client harness (build tag `e2e`) | H |
 | `docs/{en,ja}/` | RFP, ADR-0001–0007, architecture, phase1-plan | Phase 0/1 ✅ |
@@ -59,12 +60,12 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 - **ADR-0006**: Async for heavy tools only (`create_workspace`, `protocol_hierarchy`, `list_conversations`, `query_packets`, `extract_objects`). Validation stays synchronous. Jobs are in-memory; `job_not_found` means "just re-run it".
 - **ADR-0007**: Payload safety, all four in the same commit as the payload code — nonce XML isolation with the framing **first**, defang to `<sha256>.bin` mode 0600, payload never logged, ranged reads via `offset`/`length`.
 
-## Tool surface (10 registered, 12 planned)
+## Tool surface (12)
 
 `get_usage` · `create_workspace` · `describe_workspace` · `list_workspaces` ·
 `delete_workspace` · `describe_runtime` · `protocol_hierarchy` ·
-`list_conversations` · `query_packets` · `check_job` — plus `follow_stream` and
-`extract_objects`, still to come in Track G
+`list_conversations` · `query_packets` · `follow_stream` · `extract_objects` ·
+`check_job`
 
 `describe_workspace` is the free one — it reads the `capinfos` cache and starts
 no container. Expect it to be the most-called tool.
@@ -83,6 +84,8 @@ no container. Expect it to be the most-called tool.
 - **A row limit kills the container on purpose.** `StreamResult.Stopped` says so — treat a non-zero exit as tshark's fault only when `Stopped` is false, or every limited query reports a container failure.
 - **`rows` is a pointer.** An empty inline result must serialize as `[]`; under `omitempty` a plain slice vanishes and becomes indistinguishable from a file-backed result. `delivery` states the channel outright.
 - **Background jobs must not inherit the request context.** It is cancelled the moment the job id is returned; `Deps.ServerCtx` is what they run under.
+- **Payload must stay inside `payload.Untrusted`.** It redacts in `String`/`LogValue`, so nothing leaks through a log line or an error. `Reveal()` is the only way out — grep for it to audit every such site.
+- **Never store an object under a name from the wire.** tshark writes `object1.text%2fplain` at 0644; `payload.Defang` renames to `<sha256>.bin` at 0600.
 - **stdout is the protocol channel.** All logging goes to stderr; a stray `fmt.Println` corrupts the JSON-RPC stream.
 
 ## Conventions (organization-wide)

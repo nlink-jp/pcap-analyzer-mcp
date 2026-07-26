@@ -15,11 +15,14 @@ import (
 // Only the tools that read the whole capture take async (ADR-0006); offering
 // it on a cached lookup would be noise.
 func TestAsyncIsOfferedExactlyWhereItShouldBe(t *testing.T) {
+	// The set is ADR-0006's table: the tools that read the whole capture.
+	// follow_stream is absent because it touches one stream.
 	want := map[string]bool{
 		"create_workspace":   true,
 		"protocol_hierarchy": true,
 		"list_conversations": true,
 		"query_packets":      true,
+		"extract_objects":    true,
 	}
 	for _, r := range newDeps(&fakeRunner{}).all() {
 		var schema struct {

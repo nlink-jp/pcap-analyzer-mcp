@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase 1 Track F: `internal/job` — background execution with `async: true` on
   the four whole-capture tools, a `check_job` tool, and a `[jobs]
   max_concurrent` cap on simultaneous container runs
+- Phase 1 Track G: `follow_stream` and `extract_objects`, with the four
+  safety mechanisms of ADR-0007 — `payload.Untrusted` (self-redacting in logs,
+  errors and formatting; framing emitted ahead of the content), object defang
+  to `<sha256>.bin` at mode 0600, and ranged reads windowed per direction
 
 ### Changed
 
