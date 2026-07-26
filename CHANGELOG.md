@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-07-26
+
+### Fixed
+
+- **`--version` now works.** Only the `version` subcommand did. Every other
+  tool in the org answers the flag, and the shared homebrew formula template
+  tests for it — so the tap's test block would have failed on install. Found
+  by wiring up tap distribution
+
 ## [0.1.0] - 2026-07-26
 
 First release. An MCP server that lets an agent analyse pcap / pcapng captures

@@ -33,6 +33,10 @@ large.
 
 See docs/{en,ja}/ for the RFP, the ADRs, and the architecture document.`,
 	SilenceUsage: true,
+	// Every tool in the org answers --version, and the homebrew formula
+	// template tests for it. Setting this makes cobra add the flag; the
+	// `version` subcommand stays for symmetry with the other subcommands.
+	Version: Version,
 }
 
 // Execute runs the root command and exits non-zero on failure. cobra has
