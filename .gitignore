@@ -1,0 +1,21 @@
+# Build artifacts
+dist/
+
+# Go
+*.test
+*.out
+
+# Credentials
+.env
+
+# Claude Code local settings (whole directory — worktrees/ etc. also land here)
+.claude/
+
+# macOS
+.DS_Store
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
