@@ -38,7 +38,7 @@ The target user is the developer themselves, performing incident response and tr
 | `list_conversations` | Conversation list including `tcp.stream` / `udp.stream` index. Sorting by bytes gives top talkers | Yes | Yes |
 | `query_packets` | **The workhorse.** Display filter + field selection + limit + format | Yes | Yes |
 | `follow_stream` | Reassembled stream content, with `offset` / `length` ranged reads | Yes | — |
-| `extract_objects` | Export HTTP / SMB / IMF / TFTP objects, defanged, plus a manifest | Yes | Yes |
+| `extract_objects` | Export HTTP / SMB / IMF / TFTP / FTP-DATA / DICOM objects, defanged, plus a manifest | Yes | Yes |
 | `check_job` | Progress and result of an async job | No | — |
 
 (12 entries including `check_job`; 11 are actual work tools once `get_usage` is excluded.)
@@ -85,16 +85,15 @@ Every result-returning tool follows one shape. The shape does **not** change bet
 pcap_path, sha256, file_size, format (pcap/pcapng), encapsulation
 packet_count, first_packet, last_packet, duration_sec
 avg_packet_size, max_packet_size, avg_bytes_per_sec
-snaplen, truncated
-dropped_packets           (when recorded in the pcapng ISB)
+snaplen_header, snaplen_inferred_min, snaplen_inferred_max, truncated
 capture_os, capture_app   (when recorded in the pcapng SHB)
 tshark_version, image_digest
 outputs[]                 (files generated so far)
 ```
 
-Disclosing `snaplen` / `truncated` is mandatory. A capture taken with `-s 96` has no payload, so `follow_stream` and `extract_objects` will come up empty. The agent must learn this **before** trying, otherwise it will read the failure as a transient error and retry pointlessly.
+Disclosing the snaplen fields and `truncated` is mandatory. The file-header snaplen alone is not enough — it can be unset while the packets are in fact truncated — so the decision also uses the inferred min/max values capinfos reports. A capture taken with `-s 96` has no payload, so `follow_stream` and `extract_objects` will come up empty. The agent must learn this **before** trying, otherwise it will read the failure as a transient error and retry pointlessly.
 
-`dropped_packets` matters for the same reason: whether "there is no SYN" means no traffic occurred or the capture engine dropped it changes the conclusion of an incident.
+Whether "there is no SYN" means no traffic occurred or the capture engine dropped it also changes the conclusion, but disclosing the drop count is deferred (see §7).
 
 ### Configuration
 
@@ -129,7 +128,7 @@ level = "info"              # payload bytes are never written to the log
 ### External Dependencies
 
 - **Podman** (rootless, daemonless) — the `podman` binary is exec'd as a child process
-- **The analysis container image** — `debian:12-slim` (digest-pinned) + `tshark`. The dependency on `wireshark-common` brings `capinfos` / `editcap` / `mergecap` / `text2pcap` along automatically. Expected image size 150–250MB
+- **The analysis container image** — `debian:12-slim` (digest-pinned) + `tshark`. The dependency on `wireshark-common` brings `capinfos` / `editcap` / `mergecap` / `text2pcap` along automatically. Measured image size 274MB
 - No external APIs, no credentials, no network access (`network = "none"`)
 
 ## 3. Design Decisions
@@ -176,7 +175,7 @@ The split of responsibility is: **narrowing down = pcap-analyzer, aggregation / 
 
 ### Explicitly out of scope
 
-- **Live capture.** Read-only analysis needs no privileges at all, and a `network = "none"` container cannot capture by construction, so the boundary is enforced by design. setuid dumpcap is explicitly disabled via debconf; the container runs non-root with `--cap-drop=ALL`
+- **Live capture.** Read-only analysis needs no privileges at all, and a `network = "none"` container cannot capture by construction, so the boundary is enforced by design. setuid dumpcap is declined via debconf and the dumpcap binary is deleted outright; the container runs non-root with `--cap-drop=ALL`
 - **IDS / signature detection** (Suricata, Zeek scripts)
 - **pcap editing / anonymization** — worth revisiting later, not in v1
 - **parquet output** — a consequence of the lean image
@@ -294,12 +293,12 @@ The name is `pcap-analyzer-mcp`. It is neither a `-studio` (composition) nor a `
 - **`-z conv,tcp` does not include the stream index** — the output carries only addresses, ports, frame counts, and byte counts, never `tcp.stream`. Reverse-mapping from the 4-tuple breaks down under port reuse. If `list_conversations` is to be the entry point to `follow_stream`, building it from `-T fields -e tcp.stream ...` with local aggregation is more robust (**to be confirmed against real output during implementation**)
 - **Warning when run as root** — tshark warns when run as root, so non-root execution (`USER 1000`) is assumed
 - **Debian debconf prompt** — `wireshark-common` asks interactively whether non-superusers may capture packets. Use `DEBIAN_FRONTEND=noninteractive` + `debconf-set-selections` to set setuid explicitly to false
-- **Use `capinfos -M`** (machine-readable output) so no human-formatted values with thousands separators or unit suffixes need parsing
+- **Use `capinfos -T -m -Q` with selected fields** — `-M` only affects long reports, not the table form. `-Q` quotes the values so `encoding/csv` can read them. Do not select the comment field (`-k`); it can contain newlines
 
 ### Constraints of the evidence itself
 
 - **Truncated captures** — a capture taken with `-s <n>` has no payload, so `follow_stream` / `extract_objects` cannot work. Disclosed up front via `snaplen` / `truncated` in `describe_workspace`
-- **Capture drops** — disclosed as `dropped_packets` when recorded in the pcapng ISB. Whether "no packet" means "no traffic" or "we missed it" changes the conclusion
+- **Capture drops** — whether "no packet" means "no traffic" or "we missed it" changes the conclusion, so this is worth disclosing, but measurement showed **`capinfos` does not report pcapng ISB drop counts** (tshark 4.0.17). v1 omits `dropped_packets`; an alternative route is left for Track D
 
 ---
 
@@ -364,6 +363,6 @@ This observation exposed that the original `describe_capture` **conflated two op
 - Protocol hierarchy (full pass) → renamed `protocol_hierarchy`, so the name no longer sounds cheap while doing a full pass
 - Top talkers → already covered by `list_conversations`
 
-The tool count did not grow. Two fields were made mandatory in the metadata: `snaplen` / `truncated` (so the agent learns **before trying** that payload extraction will come up empty on a truncated capture) and `dropped_packets` (whether "no packet" means no traffic or a missed capture changes the conclusion).
+The tool count did not grow. Two fields were made mandatory in the metadata: `snaplen` / `truncated` (so the agent learns **before trying** that payload extraction will come up empty on a truncated capture) and `dropped_packets`. The latter was dropped from v1 during Track C, when measurement showed capinfos does not report ISB drop counts.
 
 Separately, `export_table` was folded into `query_packets`, since it was really just "`query_packets` with an output destination and format" and the inline-versus-file switch is decided by size automatically anyway.

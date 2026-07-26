@@ -4,10 +4,11 @@
 # exported packet table is data-toolbox-mcp's job, so exports leave as
 # JSONL/CSV rather than parquet.
 #
-# TODO(Track C): replace the tag with a digest pin (debian:12-slim@sha256:...)
-# once the image is first built, and record it in internal/runtime/manifest.go.
-# Pinning the version is the entire point of running tshark in a container.
-FROM debian:12-slim
+# Pinned by digest, not by tag: `debian:12-slim` moves, and a moving base
+# means the tshark version moves with it. Pinning the version is the entire
+# point of running tshark in a container. internal/runtime/manifest.go carries
+# the same digest and a drift test keeps the two in step.
+FROM debian:12-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
 
 # The wireshark-common package asks, via debconf, whether non-superusers
 # should be able to capture packets. Answer it non-interactively and say no:
@@ -15,10 +16,16 @@ FROM debian:12-slim
 # attack surface. Installing tshark also brings capinfos, editcap, mergecap
 # and text2pcap along, which is where capture metadata and split-capture
 # merging come from.
+#
+# The debconf answer leaves dumpcap installed, just without its setuid bit, so
+# delete the binary outright: nothing here ever captures, and a capture tool
+# that cannot be invoked is better than one that merely lacks privileges.
+# tshark -r does not use dumpcap.
 RUN echo "wireshark-common wireshark-common/install-setuid boolean false" \
       | debconf-set-selections \
  && DEBIAN_FRONTEND=noninteractive apt-get update \
  && apt-get install -y --no-install-recommends tshark \
+ && rm -f /usr/bin/dumpcap \
  && rm -rf /var/lib/apt/lists/*
 
 # tshark warns loudly when run as root, and there is no reason to be root

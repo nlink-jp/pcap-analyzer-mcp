@@ -38,7 +38,7 @@
 | `list_conversations` | 会話一覧（`tcp.stream` / `udp.stream` 番号込み）。バイト数降順が top talkers | あり | ○ |
 | `query_packets` | **主力**。display filter + 抽出フィールド + limit + format | あり | ○ |
 | `follow_stream` | ストリーム本文の再構成。`offset` / `length` によるレンジ読み | あり | — |
-| `extract_objects` | HTTP / SMB / IMF / TFTP オブジェクトを defang 保存 + マニフェスト返却 | あり | ○ |
+| `extract_objects` | HTTP / SMB / IMF / TFTP / FTP-DATA / DICOM オブジェクトを defang 保存 + マニフェスト返却 | あり | ○ |
 | `check_job` | 非同期ジョブの進捗と結果 | なし | — |
 
 （`check_job` を含めて12エントリだが、`get_usage` を除いた実作業ツールは11本）
@@ -85,16 +85,15 @@
 pcap_path, sha256, file_size, format (pcap/pcapng), encapsulation
 packet_count, first_packet, last_packet, duration_sec
 avg_packet_size, max_packet_size, avg_bytes_per_sec
-snaplen, truncated
-dropped_packets           (pcapng ISB に記録されていれば)
+snaplen_header, snaplen_inferred_min, snaplen_inferred_max, truncated
 capture_os, capture_app   (pcapng SHB に記録されていれば)
 tshark_version, image_digest
 outputs[]                 (これまでに生成した出力ファイル一覧)
 ```
 
-`snaplen` / `truncated` の開示は必須。`-s 96` などで切り詰められたキャプチャではペイロードが存在せず、`follow_stream` も `extract_objects` も空振りする。これを**試す前に**エージェントへ伝えないと、失敗したと誤解して無駄なリトライを繰り返す。
+snaplen 系フィールドと `truncated` の開示は必須。切り詰め判定はファイルヘッダの snaplen だけでは足りず、ヘッダ未設定でも実パケットが切り詰められていることがあるため、`capinfos` が返す推定値（inferred min/max）と併せて判定する。`-s 96` などで切り詰められたキャプチャではペイロードが存在せず、`follow_stream` も `extract_objects` も空振りする。これを**試す前に**エージェントへ伝えないと、失敗したと誤解して無駄なリトライを繰り返す。
 
-`dropped_packets` も同様に重要で、「SYN が無い」のが通信が無かったのかキャプチャが取りこぼしたのかでインシデントの結論が変わる。
+「SYN が無い」のが通信が無かったのかキャプチャが取りこぼしたのかでも結論は変わるが、取りこぼし数の開示は v1 では見送る（§7 参照）。
 
 ### Configuration
 
@@ -129,7 +128,7 @@ level = "info"              # ペイロード本体は決してログに出さ�
 ### External Dependencies
 
 - **Podman**（rootless、デーモン不要）— 子プロセスとして `podman` バイナリを exec
-- **解析コンテナイメージ** — `debian:12-slim`（digest pin）+ `tshark`。`wireshark-common` 依存により `capinfos` / `editcap` / `mergecap` / `text2pcap` も自動同梱される。イメージサイズ 150〜250MB 想定
+- **解析コンテナイメージ** — `debian:12-slim`（digest pin）+ `tshark`。`wireshark-common` 依存により `capinfos` / `editcap` / `mergecap` / `text2pcap` も自動同梱される。イメージサイズ実測 274MB
 - 外部 API・認証情報・ネットワークアクセスは一切なし（`network = "none"`）
 
 ## 3. Design Decisions
@@ -176,7 +175,7 @@ ephemeral 化で捨てられるもの:
 
 ### 明示的にスコープ外
 
-- **ライブキャプチャ** — 読み取り専用解析に権限は一切不要。`network = "none"` のコンテナは原理的にキャプチャできないため、設計で強制される。setuid dumpcap は debconf で明示的に無効化し、非 root 実行、`--cap-drop=ALL`
+- **ライブキャプチャ** — 読み取り専用解析に権限は一切不要。`network = "none"` のコンテナは原理的にキャプチャできないため、設計で強制される。setuid dumpcap を debconf で無効化したうえで dumpcap バイナリごと削除し、非 root 実行、`--cap-drop=ALL`
 - **IDS / シグネチャ検知**（Suricata / Zeek スクリプト）
 - **pcap の編集・匿名化** — 将来検討の余地はあるが v1 では扱わない
 - **parquet 出力** — lean イメージの帰結
@@ -294,12 +293,12 @@ Reason:
 - **`-z conv,tcp` にストリーム番号が含まれない** — 出力はアドレス / ポート / フレーム数 / バイト数のみで `tcp.stream` を返さない。4タプルからの逆引きはポート再利用で多対一に崩れる。`list_conversations` を `follow_stream` の入口にするなら `-T fields -e tcp.stream ...` の自前集約で作るほうが堅い（**実装時に実出力で要確認**）
 - **root 実行時の警告** — tshark は root で走ると警告を出す。非 root 実行（`USER 1000`）が前提
 - **Debian パッケージの debconf 対話** — `wireshark-common` が「非 root にキャプチャさせるか」を対話質問する。`DEBIAN_FRONTEND=noninteractive` + `debconf-set-selections` で setuid を明示的に false にする
-- **`capinfos` は機械可読出力（`-M`）を使う** — 桁区切りや単位付きの人間向け整形をパースしない
+- **`capinfos` は `-T -m -Q` の選択フィールド CSV を使う** — `-M` は long report にしか効かない。`-Q` で引用されるため `encoding/csv` で読める。コメント欄（`-k`）は改行を含みうるので選択しない
 
 ### 証拠データそのものの制約
 
 - **切り詰めキャプチャ** — `-s <n>` で取得されたキャプチャはペイロードが存在せず、`follow_stream` / `extract_objects` は成立しない。`describe_workspace` の `snaplen` / `truncated` で事前開示する
-- **キャプチャ取りこぼし** — pcapng ISB に記録があれば `dropped_packets` として開示する。「パケットが無い」が「通信が無かった」なのか「取り逃した」なのかで結論が変わる
+- **キャプチャ取りこぼし** — 「パケットが無い」が「通信が無かった」なのか「取り逃した」なのかで結論が変わるため開示したいが、**`capinfos` は pcapng ISB の drop 数を出力しない**ことが実測で判明（tshark 4.0.17）。v1 では `dropped_packets` を提供せず、代替経路は Track D で検討する
 
 ---
 
@@ -364,6 +363,6 @@ lean イメージの帰結として **parquet 出力は不可能**になるた�
 - プロトコル階層（フルパス） → `protocol_hierarchy` に改名（「安そうな名前なのに実はフルパス」という誤解を避けるため）
 - top talkers → `list_conversations` が既に担当
 
-ツール本数は増えなかった。併せて `snaplen` / `truncated` の開示（切り詰めキャプチャでペイロード抽出が空振りすることを**試す前に**知らせる）と `dropped_packets` の開示（「パケットが無い」が通信不在なのか取りこぼしなのかで結論が変わる）を必須項目とした。
+ツール本数は増えなかった。併せて `snaplen` / `truncated` の開示（切り詰めキャプチャでペイロード抽出が空振りすることを**試す前に**知らせる）と `dropped_packets` の開示を必須項目とした。※後者は Track C の実測で `capinfos` が ISB drop を出力しないと判明し、v1 スコープから外した。
 
 また、`export_table` は実体が「出力先とフォーマットを指定した `query_packets`」でしかなく、インライン / ファイルの切り替えはどのみちサイズで自動判定するため、`query_packets` に統合した。

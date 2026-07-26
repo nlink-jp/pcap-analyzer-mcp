@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-26
 - Driver: magi
+- Revisions: 2026-07-26 — Decision and Consequences amended after the Track C build (dumpcap removal, measured size, resolved digest)
 - Generalises to: none
 
 ---
@@ -27,14 +28,17 @@ B removes handoff friction but duplicates functionality that data-toolbox-mcp al
 **Adopt A (lean). The image contains tshark and its dependencies only — no Python, DuckDB, or pyarrow.**
 
 ```dockerfile
-FROM debian:12-slim@sha256:...           # digest pin
+FROM debian:12-slim@sha256:7b140f37...    # digest pin (real value in runtime/Dockerfile)
 
 # wireshark-common asks via debconf whether non-superusers may capture packets.
-# Make it non-interactive and explicitly disable setuid dumpcap (we never capture).
+# Make it non-interactive and explicitly disable setuid dumpcap (we never
+# capture). The debconf answer alone leaves the dumpcap binary in place, just
+# without its setuid bit, so delete it outright. tshark -r does not use it.
 RUN echo "wireshark-common wireshark-common/install-setuid boolean false" \
       | debconf-set-selections \
  && DEBIAN_FRONTEND=noninteractive apt-get update \
  && apt-get install -y --no-install-recommends tshark \
+ && rm -f /usr/bin/dumpcap \
  && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -u 1000 pcap
@@ -54,9 +58,10 @@ Export formats are **JSONL / CSV**.
 
 **Positive:**
 
-- **Expected image size of 150–250MB** (versus data-toolbox-mcp's 882MB), with a correspondingly fast `build-runtime`
-- **`capinfos` / `editcap` / `mergecap` / `text2pcap` come along automatically.** Because `tshark` depends on `wireshark-common`, both metadata retrieval (`capinfos`) and split-capture merging (`mergecap`) work with no extra installs
-- **Disabling setuid dumpcap and running non-root produces an image with no capture capability.** Live capture being out of scope is guaranteed by construction, not by policy
+- **Measured image size of 274MB** (versus data-toolbox-mcp's 882MB). The original 150–250MB estimate was low, but the size and the `build-runtime` time are both acceptable
+- **`capinfos` / `editcap` / `mergecap` / `text2pcap` come along automatically (verified).** Because `tshark` depends on `wireshark-common`, both metadata retrieval (`capinfos`) and split-capture merging (`mergecap`) work with no extra installs. A useful side effect: `text2pcap` can synthesize test fixtures
+- **Deleting the dumpcap binary and running non-root produces an image with no capture capability.** Live capture being out of scope is guaranteed by construction, not by policy
+- **`tshark --export-objects` supports six protocols** (`dicom` / `ftp-data` / `http` / `imf` / `smb` / `tftp`). The RFP assumed four; `ftp-data` and `dicom` turned up on measurement
 - No functional overlap with data-toolbox-mcp; the split of responsibility stays clean
 
 **Negative:**

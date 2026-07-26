@@ -24,8 +24,8 @@ tshark をコンテナ内で動かし**、キャプチャを **read-only でマ�
   各結果には使用した tshark バージョンとイメージ digest が記録されます。
 - **隔離** — Wireshark の dissector は攻撃者制御下のデータを解釈します。
   コンテナは `--network=none`、非 root、全 capability を落として実行します。
-- **誤キャプチャの排除** — イメージには setuid `dumpcap` が無くネットワークも
-  ありません。ライブキャプチャは方針ではなく構成上不可能です。
+- **誤キャプチャの排除** — イメージから `dumpcap` バイナリを削除しており、
+  ネットワークもありません。ライブキャプチャは方針ではなく構成上不可能です。
 
 キャプチャは **複製しません**。ディレクトリを read-only でマウントするため
 原本はバイト単位で変わりません。GB 級ファイルで安価であり、証拠の取り扱いと
@@ -87,7 +87,7 @@ extract_objects(workspace_id, "http")       →  ファイル抽出（defang + �
 | `list_conversations` | 端点ペアとバイト数、ストリーム番号 |
 | `query_packets` | display filter + フィールド抽出 — 主力 |
 | `follow_stream` | ストリーム本文の再構成（レンジ読み対応） |
-| `extract_objects` | HTTP / SMB / IMF / TFTP オブジェクトの抽出 |
+| `extract_objects` | HTTP / SMB / IMF / TFTP / FTP-DATA / DICOM オブジェクトの抽出 |
 | `check_job` | 非同期実行の進捗と結果 |
 
 重いツールは `async: true` を受け付け `job_id` を返すので、`check_job` で

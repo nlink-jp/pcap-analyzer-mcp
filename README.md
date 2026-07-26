@@ -27,8 +27,9 @@ Pinning tshark at image build time solves three problems at once:
 - **Isolation** — Wireshark dissectors parse attacker-controlled data. The
   container runs with `--network=none`, as a non-root user, with all
   capabilities dropped.
-- **No accidental capture** — the image has no setuid `dumpcap` and no network.
-  Live capture is impossible by construction, not by policy.
+- **No accidental capture** — the `dumpcap` binary is deleted from the image,
+  which also has no network. Live capture is impossible by construction, not
+  by policy.
 
 The capture is **never copied**. Its directory is mounted read-only, so the
 original stays byte-identical — cheap for GB-scale files, and correct for
@@ -90,7 +91,7 @@ extract_objects(workspace_id, "http")       →  files, defanged, hashed
 | `list_conversations` | Endpoint pairs with byte counts and stream indices |
 | `query_packets` | Display filter + field selection — the workhorse |
 | `follow_stream` | Reassembled stream content, with ranged reads |
-| `extract_objects` | Export HTTP / SMB / IMF / TFTP objects |
+| `extract_objects` | Export HTTP / SMB / IMF / TFTP / FTP-DATA / DICOM objects |
 | `check_job` | Progress and result of an async run |
 
 Heavy tools accept `async: true` and return a `job_id`; poll with `check_job`.

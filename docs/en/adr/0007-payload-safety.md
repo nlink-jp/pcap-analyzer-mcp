@@ -9,7 +9,7 @@
 
 ## Context
 
-`follow_stream` (stream reassembly) and `extract_objects` (exporting HTTP / SMB / IMF / TFTP objects) are in the MVP, because metadata alone is not enough for an agent to dig deep.
+`follow_stream` (stream reassembly) and `extract_objects` (exporting objects for the six protocols tshark supports: dicom / ftp-data / http / imf / smb / tftp) are in the MVP, because metadata alone is not enough for an agent to dig deep.
 
 Including them changes the standing of the security design. Measures that were nice-to-have for the read-only tools become **load-bearing requirements**.
 

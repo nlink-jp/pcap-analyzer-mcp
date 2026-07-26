@@ -10,9 +10,9 @@ network-less container; the capture is mounted **read-only and never copied**.
 Results come back inline when small and as JSONL files in the workspace when
 large.
 
-**Status: Phase 1 Track B complete.** The MCP protocol layer works and is
-tested; no tools are registered yet, so `serve` still reports the track that
-will wire it up, as do `build-runtime` and `doctor`.
+**Status: Phase 1 Tracks A–C complete.** The MCP protocol layer, the analysis
+image, `build-runtime` and `doctor` all work. No tools are registered yet, so
+`serve` still reports the track that will wire it up.
 
 ## Build / test
 
@@ -32,7 +32,8 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 | `main.go` | Entry point, delegates to `cmd.Execute()` | A ✅ |
 | `cmd/` | cobra subcommands (root / serve / build-runtime / doctor / version) | A ✅ |
 | `internal/config/` | config.toml loading, single `Validate()` path | A ✅ |
-| `runtime/Dockerfile` | Source for the tshark image, embedded via `go:embed` | C |
+| `runtime/` | tshark image Dockerfile + `go:embed` + the static `describe_runtime` manifest | C ✅ |
+| `internal/podman/` | podman CLI wrapper (build / inspect / machine / mount probe) | C ✅ |
 | `internal/transport/` | MCP stdio JSON-RPC framing | B ✅ |
 | `internal/jsonrpc/` | JSON-RPC 2.0 types | B ✅ |
 | `internal/mcpserver/` | MCP protocol (initialize, tools/list, tools/call) | B ✅ |
@@ -51,7 +52,7 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 
 - **ADR-0001**: tshark is the backend. Display filters pass through from the agent verbatim. Zeek is deferred, and adopting it would mean *new tools*, not a backend swap.
 - **ADR-0002**: Containers are **ephemeral, one per `podman run --rm` per call**. No persistent container, no `podman exec`, no orphan scanning. tshark is stateless, so there is nothing to persist.
-- **ADR-0003**: Lean image — `debian:12-slim` (digest-pinned) + `tshark` only. No DuckDB, no Python, therefore **no parquet**; exports are JSONL / CSV. setuid dumpcap is disabled, so the image cannot capture.
+- **ADR-0003**: Lean image — `debian:12-slim` (digest-pinned) + `tshark` only, 274MB. No DuckDB, no Python, therefore **no parquet**; exports are JSONL / CSV. The dumpcap binary is deleted, so the image cannot capture.
 - **ADR-0004**: **1 pcap : 1 workspace.** The capture's parent directory is mounted `ro` at `/evidence` and never copied. `workspace_dir` is an argument, not config. `allowed_paths` is a guardrail (default: unrestricted), not a sandbox boundary.
 - **ADR-0005**: Output contract — threshold in **bytes not rows**, response shape identical inline vs. file, `matched` always returned, `sample` attached for file results, large output is **JSONL not a JSON array**.
 - **ADR-0006**: Async for heavy tools only (`create_workspace`, `protocol_hierarchy`, `list_conversations`, `query_packets`, `extract_objects`). Validation stays synchronous. Jobs are in-memory; `job_not_found` means "just re-run it".
@@ -69,13 +70,12 @@ no container. Expect it to be the most-called tool.
 
 ## Gotchas
 
-- **`-z conv,tcp` does not carry `tcp.stream`.** `list_conversations` is the entry point to `follow_stream`, so it must be built from `-T fields -e tcp.stream ...` with server-side aggregation. Confirm against real output (phase1-plan §5 Q5-1).
+- **`-z conv,tcp` does not carry `tcp.stream`** — confirmed against tshark 4.0.17. Its row order does not even match stream order, so there is no way to recover the index from it. `list_conversations` is the entry point to `follow_stream`, so build it from `-T fields -e tcp.stream ...` with server-side aggregation.
 - **Truncated captures.** A capture taken with a small snaplen has no payload. Surface `snaplen` / `truncated` from `describe_workspace` and return `payload_unavailable_truncated_capture` *before* running a payload tool, or the agent will read the empty result as a transient failure and retry forever.
-- **`dropped_packets` changes conclusions.** "No SYN" means something entirely different when the capture engine dropped packets. Disclose it when pcapng ISB records it.
-- **`capinfos -M`** for machine-readable output. Do not parse the human-formatted form with thousands separators and unit suffixes.
-- **Debian's `tshark` package prompts via debconf** about setuid dumpcap. Non-interactive install plus `debconf-set-selections` setting it to false.
+- **`capinfos -T -m -Q` with selected fields**, not `-M` — `-M` only affects long reports. `-Q` quotes values so `encoding/csv` reads them. Never select `-k` (comment): it contains newlines. And `capinfos` does **not** report pcapng ISB drop counts, so `dropped_packets` is out of v1.
+- **Debian's `tshark` package prompts via debconf** about setuid dumpcap. Non-interactive install plus `debconf-set-selections` setting it to false — and note that this leaves the dumpcap binary in place, which is why the Dockerfile deletes it.
 - **tshark warns when run as root.** The image runs as `USER 1000`.
-- **macOS virtiofs.** Captures outside `/Users`, `/private/tmp`, `/var/folders` cannot be mounted. `doctor` checks this.
+- **macOS virtiofs.** Captures outside the machine's shares cannot be mounted. `podman machine inspect` does not expose the share list, so `doctor` finds out by attempting a real read-only mount.
 - **Podman Machine memory.** 4GB default is not enough for a full pass over a large capture; 8GB recommended.
 - Time values are returned as **epoch plus UTC ISO-8601**, never local-formatted.
 

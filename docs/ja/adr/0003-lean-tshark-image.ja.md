@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-26
 - Driver: magi
+- Revisions: 2026-07-26 — Track C の実ビルドを受けて Decision と Consequences を改定（dumpcap 削除、実測サイズ、digest 確定）
 - Generalises to: なし
 
 ---
@@ -27,14 +28,17 @@ B は受け渡しの摩擦がゼロになる代わりに、data-toolbox-mcp と�
 **A（lean）を採用する。イメージには tshark とその依存のみを含め、Python / DuckDB / pyarrow は入れない。**
 
 ```dockerfile
-FROM debian:12-slim@sha256:...           # digest pin
+FROM debian:12-slim@sha256:7b140f37...    # digest pin（実際の値は runtime/Dockerfile）
 
 # wireshark-common は debconf で「非 root にキャプチャさせるか」を対話質問する。
 # 非対話化し、setuid dumpcap は明示的に無効化する（キャプチャは一切行わない）。
+# ただし debconf の回答だけでは dumpcap バイナリ自体は残る（setuid ビットが
+# 付かないだけ）ため、バイナリごと削除する。tshark -r は dumpcap を使わない。
 RUN echo "wireshark-common wireshark-common/install-setuid boolean false" \
       | debconf-set-selections \
  && DEBIAN_FRONTEND=noninteractive apt-get update \
  && apt-get install -y --no-install-recommends tshark \
+ && rm -f /usr/bin/dumpcap \
  && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -u 1000 pcap
@@ -42,6 +46,10 @@ USER 1000:1000
 ENV TMPDIR=/work/tmp
 WORKDIR /work
 ```
+
+**dumpcap の削除は 2026-07-26 の改定で追加した。** 初回ビルドを検査したところ
+`/usr/bin/dumpcap` が `-rwxr-xr-x`（setuid なし）で残っていた。権限を奪うだけ
+より、呼べないほうがよい。削除後も `tshark -r` は正常に動作することを確認済み。
 
 - **ベースイメージは digest で pin する。** `debian:12-slim` のような可動タグには依存しない
 - **使用したイメージ digest と tshark バージョンを、ワークスペースのメタデータに記録する**（ADR-0004）。「どのバージョンの tshark で得た結果か」が後から辿れることは、証跡としても、dissector 由来の解釈差を疑うときにも効く
@@ -54,9 +62,10 @@ WORKDIR /work
 
 **Positive:**
 
-- **イメージサイズが 150〜250MB に収まる見込み**（data-toolbox-mcp の 882MB と比べて大幅に軽い）。`build-runtime` の所要時間も短い
-- **`capinfos` / `editcap` / `mergecap` / `text2pcap` が自動的に同梱される。** `tshark` パッケージが `wireshark-common` に依存するため、メタ情報取得（`capinfos`）も分割キャプチャ結合（`mergecap`）も追加インストール無しで実現できる
-- **setuid dumpcap を無効化し非 root で実行することで、キャプチャ能力を持たないイメージになる。** ライブキャプチャがスコープ外であることが、方針ではなく構成で保証される
+- **イメージサイズは実測 274MB**（data-toolbox-mcp の 882MB と比べて大幅に軽い）。当初見積もりの 150〜250MB は下振れしていたが、`build-runtime` の所要時間を含め許容範囲
+- **`capinfos` / `editcap` / `mergecap` / `text2pcap` が自動的に同梱される（実測確認済み）。** `tshark` パッケージが `wireshark-common` に依存するため、メタ情報取得（`capinfos`）も分割キャプチャ結合（`mergecap`）も追加インストール無しで実現できる。テストフィクスチャの合成に `text2pcap` が使えるという副次的な利点もあった
+- **dumpcap バイナリを削除し非 root で実行することで、キャプチャ能力を持たないイメージになる。** ライブキャプチャがスコープ外であることが、方針ではなく構成で保証される
+- **`tshark --export-objects` の対応プロトコルは 6 種**（`dicom` / `ftp-data` / `http` / `imf` / `smb` / `tftp`）。RFP 段階では 4 種と見込んでいたが、実測で `ftp-data` と `dicom` も使えることが判明した
 - data-toolbox-mcp と機能が重複しない。責務分割が明快になる
 
 **Negative:**

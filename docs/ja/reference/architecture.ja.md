@@ -70,7 +70,7 @@
 1. `workspace_dir` の書き込み可否を確認、`pcap_path` を symlink 解決し `allowed_paths` を検査
 2. `workspace_id` を生成（pcap のベース名 + 短いハッシュ）、`<workspace_dir>/<id>/work/{tmp,out,out/objects}` を作成
 3. ホスト側で pcap の **SHA-256** を計算
-4. `podman run --rm -v <pcap の親>:/evidence:ro -v <ws>/work:/work <image> capinfos -M /evidence/<name>` を実行
+4. `podman run --rm -v <pcap の親>:/evidence:ro -v <ws>/work:/work <image> capinfos -T -m -Q <選択フィールド> /evidence/<name>` を実行
 5. `tshark --version` とイメージ digest を取得
 6. 3〜5 を `<ws>/meta.json` に書き込む
 7. `workspace_id` と要約を返す
@@ -175,7 +175,7 @@ sentinel code 案: `invalid_arguments` / `missing_argument` / `invalid_workspace
 
 ### 6.3 コンテナ実行時制限
 
-`--network=none` / `--cap-drop=ALL` / 非 root（`USER 1000`）/ `--userns=keep-id` / `--cpus` / `--memory` / `--rm`。イメージには setuid dumpcap が存在しないため、キャプチャ能力自体が無い。
+`--network=none` / `--cap-drop=ALL` / 非 root（`USER 1000`）/ `--userns=keep-id` / `--cpus` / `--memory` / `--rm`。イメージからは dumpcap バイナリ自体を削除しているため、キャプチャ能力が無い。
 
 ### 6.4 ペイロードの扱い
 

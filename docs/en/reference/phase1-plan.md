@@ -37,11 +37,12 @@ Ported from data-toolbox-mcp (`feedback_data_toolbox_mcp_skeleton`).
 ### Track C: Runtime container image + build-runtime + doctor
 
 - `runtime/Dockerfile` (ADR-0003) + `runtime/embed.go`
-- Non-interactive debconf and disabled setuid dumpcap, non-root, `TMPDIR=/work/tmp`
+- Non-interactive debconf, **deletion of the dumpcap binary**, non-root, `TMPDIR=/work/tmp`
 - Base image digest pin
-- The `build-runtime` subcommand
-- `doctor`: podman presence / machine state (macOS) / image presence / config parse / **virtiofs shared-path check**
-- `internal/runtime/manifest.go` plus a drift test against the Dockerfile
+- `internal/podman`: podman CLI wrapper (build / image exists / image inspect / machine state / mount probe)
+- The `build-runtime` subcommand (with `--force`)
+- `doctor`: podman presence / machine state (macOS) / image presence / config parse / **reachability by attempting a real mount**
+- `runtime/manifest.go` plus a drift test against the Dockerfile (kept in `runtime` rather than `internal/runtime` so the test can read the embedded Dockerfile directly)
 
 ### Track D: Workspace layer
 
@@ -115,29 +116,37 @@ A track is complete when all of the following hold.
 
 Unresolved as of Phase 0. To be settled empirically before or during the relevant track.
 
-### Q5-1. Does `-z conv,tcp` really omit the stream index?
+### Q5-1. Does `-z conv,tcp` really omit the stream index? — **Resolved (Track C, tshark 4.0.17)**
 
-Making `list_conversations` the entry point to `follow_stream` requires `tcp.stream`. The design assumes it is absent and aggregates from `-T fields`, but this **must be confirmed against real output**. If present, the implementation simplifies. (Before Track E)
+It does. The output carries only addresses, ports, frame and byte counts, relative start and duration. Worse, **its row order does not match stream order either** (on a two-stream synthetic capture, stream 0 appeared on the second row), so the index cannot be inferred from position. `list_conversations` will aggregate `-T fields -e tcp.stream ...` server-side as designed.
 
 ### Q5-2. virtiofs behavior for single-file bind mounts
 
 Smaller blast radius than a parent-directory ro mount, but behavior across macOS Podman Machine is unverified. If it works, make single-file the default. (Track D)
 
+Related measurement (Track C): `podman machine inspect` **does not expose the share list** (podman 6.0.2 / applehv has no `.Mounts` field). So `doctor` does not enumerate shares — it attempts a real read-only mount and reports the outcome. The same technique will answer this question.
+
 ### Q5-3. Full-pass duration for `create_workspace`
 
 How long `capinfos` + SHA-256 take relative to pcap size. This is the basis for guidance to the agent on when `async` is needed. (Track D, measured on real pcaps)
+
+Note that `capinfos` computes and reports the file's SHA-256 itself. That is an independent second path alongside the host-side Go computation, usable as a provenance cross-check.
 
 ### Q5-4. Concurrency cap for async jobs
 
 How many parallel `podman run` processes are acceptable, balanced against macOS Podman Machine memory (4GB default, 8GB recommended). (Track F)
 
-### Q5-5. How to enumerate `--export-objects` supported protocols
+### Q5-5. How to enumerate `--export-objects` supported protocols — **Resolved (Track C)**
 
-We want `describe_runtime` to disclose this dynamically. Confirm whether an equivalent of `tshark --export-objects help` is usable in the image's tshark. (Track C)
+`tshark --export-objects help` works and returns **six**: `dicom` / `ftp-data` / `http` / `imf` / `smb` / `tftp`. The RFP assumed four, omitting `ftp-data` and `dicom`. `describe_runtime` serves this list from the static manifest (`runtime/manifest.go`); re-verify it whenever the base digest changes.
 
-### Q5-6. Does `capinfos` report pcapng ISB drop counts?
+### Q5-6. Does `capinfos` report pcapng ISB drop counts? — **Resolved (negative, Track C)**
 
-Whether `dropped_packets` can be disclosed depends on this. If not, investigate obtaining it from tshark instead. (Track D)
+It does not. `capinfos --help` has no drop-related option and no drop column appears under `-T -m` (the long report's `Number of stat entries` only reveals how many ISBs exist). **`dropped_packets` is therefore out of v1 scope**; whether tshark can supply it is left for Track D.
+
+**Side finding**: the output format itself differed from the assumption. `-M` applies only to long reports, not the table form. What is actually usable is `capinfos -T -m -Q <selected fields>` — `-Q` produces quoted CSV that `encoding/csv` reads. Do **not** select the comment field (`-k`); it can contain newlines.
+
+One more: **the file-header snaplen is not sufficient to detect truncation.** A file truncated with `editcap -s 40` still reports `(not set)` in the header while the inferred columns show `40`. The decision must use `Packet size limit min/max (inferred)` as well.
 
 ## 6. Reference reuse map
 

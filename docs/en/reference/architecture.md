@@ -70,7 +70,7 @@ Because `/evidence` is read-only, **the original evidence cannot be modified** e
 1. Verify `workspace_dir` is writable; symlink-resolve `pcap_path` and check `allowed_paths`
 2. Generate a `workspace_id` (pcap basename + short hash) and create `<workspace_dir>/<id>/work/{tmp,out,out/objects}`
 3. Compute the pcap's **SHA-256** on the host
-4. Run `podman run --rm -v <pcap parent>:/evidence:ro -v <ws>/work:/work <image> capinfos -M /evidence/<name>`
+4. Run `podman run --rm -v <pcap parent>:/evidence:ro -v <ws>/work:/work <image> capinfos -T -m -Q <selected fields> /evidence/<name>`
 5. Obtain `tshark --version` and the image digest
 6. Write steps 3–5 into `<ws>/meta.json`
 7. Return the `workspace_id` and a summary
@@ -175,7 +175,7 @@ Workspaces remain on disk. On the next connection they are discoverable via `lis
 
 ### 6.3 Container runtime restrictions
 
-`--network=none` / `--cap-drop=ALL` / non-root (`USER 1000`) / `--userns=keep-id` / `--cpus` / `--memory` / `--rm`. The image contains no setuid dumpcap, so it has no capture capability at all.
+`--network=none` / `--cap-drop=ALL` / non-root (`USER 1000`) / `--userns=keep-id` / `--cpus` / `--memory` / `--rm`. The dumpcap binary is deleted from the image, so it has no capture capability at all.
 
 ### 6.4 Payload handling
 

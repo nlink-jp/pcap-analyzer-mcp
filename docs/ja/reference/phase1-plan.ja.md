@@ -37,11 +37,12 @@ data-toolbox-mcp から移植（`feedback_data_toolbox_mcp_skeleton`）。
 ### Track C: Runtime container image + build-runtime + doctor
 
 - `runtime/Dockerfile`（ADR-0003）+ `runtime/embed.go`
-- debconf 非対話化と setuid dumpcap 無効化、非 root、`TMPDIR=/work/tmp`
+- debconf 非対話化、**dumpcap バイナリの削除**、非 root、`TMPDIR=/work/tmp`
 - ベースイメージの digest pin
-- `build-runtime` サブコマンド
-- `doctor`: podman 有無 / machine 状態(macOS) / イメージ有無 / config parse / **virtiofs 共有パス検査**
-- `internal/runtime/manifest.go` + Dockerfile とのドリフトテスト
+- `internal/podman`: podman CLI ラッパ（build / image exists / image inspect / machine state / マウントプローブ）
+- `build-runtime` サブコマンド（`--force` 付き）
+- `doctor`: podman 有無 / machine 状態(macOS) / イメージ有無 / config parse / **実マウントによる到達性検査**
+- `runtime/manifest.go` + Dockerfile とのドリフトテスト（`internal/runtime` に分けず `runtime` に同居させた。埋め込み Dockerfile をテストから直接読めるため）
 
 ### Track D: Workspace 層
 
@@ -115,29 +116,37 @@ A ──┬── B ──┬── E ── F
 
 Phase 0 時点で未解決。Track 着手前または着手中に実測で解決する。
 
-### Q5-1. `-z conv,tcp` にストリーム番号は本当に含まれないか
+### Q5-1. `-z conv,tcp` にストリーム番号は本当に含まれないか — **Resolved（Track C, tshark 4.0.17）**
 
-`list_conversations` を `follow_stream` の入口にするには `tcp.stream` が必要。含まれない前提で `-T fields` の自前集約を設計しているが、**実出力で確認する**。含まれていれば実装が簡素化する。（Track E 着手前）
+含まれない。出力はアドレス / ポート / フレーム数 / バイト数 / 相対開始 / 継続時間のみ。さらに**行順が `tcp.stream` の順とも一致しない**（2 ストリームの合成キャプチャで stream 0 が 2 行目に出た）ため、行位置からの推定もできない。設計どおり `-T fields -e tcp.stream ...` の自前集約で実装する。
 
 ### Q5-2. 単一ファイル bind mount の virtiofs 挙動
 
 親ディレクトリ ro より blast radius が小さいが、macOS の Podman Machine 越しの挙動が未検証。動作するなら既定を単一ファイルに寄せる。（Track D）
 
+関連する実測（Track C）: `podman machine inspect` は共有パスの一覧を**公開していない**（podman 6.0.2 / applehv には `.Mounts` フィールドが無い）。そのため `doctor` は一覧を引くのではなく、実際に ro マウントを試みて到達性を判定する方式にした。同じ手法が単一ファイルマウントの検証にも使える。
+
 ### Q5-3. `create_workspace` のフルパス所要時間
 
 `capinfos` + SHA-256 が pcap サイズに対してどれだけかかるか。`async` の要否をエージェントに案内する閾値の根拠になる。（Track D、実 pcap で計測）
+
+なお `capinfos` はファイル全体の SHA-256 を自前で算出して返す。ホスト側 Go の計算と独立した 2 経路になるため、証跡としてはクロスチェックに使える。
 
 ### Q5-4. 非同期ジョブの同時実行数上限
 
 `podman run` を何本まで並行させてよいか。macOS Podman Machine のメモリ（既定 4GB、8GB 推奨）との兼ね合いで決める。（Track F）
 
-### Q5-5. `--export-objects` の対応プロトコル一覧の取得方法
+### Q5-5. `--export-objects` の対応プロトコル一覧の取得方法 — **Resolved（Track C）**
 
-`describe_runtime` で動的に開示したい。`tshark --export-objects help` 相当が使えるか、イメージ内の tshark で確認する。（Track C）
+`tshark --export-objects help` がそのまま使え、**6 種**を返す: `dicom` / `ftp-data` / `http` / `imf` / `smb` / `tftp`。RFP 段階では 4 種と見込んでいた（`ftp-data` と `dicom` を落としていた）。`describe_runtime` は静的マニフェスト（`runtime/manifest.go`）でこの一覧を返し、base digest を変えたときは再確認する。
 
-### Q5-6. `capinfos` は pcapng ISB の drop 数を出すか
+### Q5-6. `capinfos` は pcapng ISB の drop 数を出すか — **Resolved（否定, Track C）**
 
-`dropped_packets` の開示可否がこれに依存する。出ない場合は `tshark` 側から取得する代替手段を検討する。（Track D）
+出さない。`capinfos --help` に drop 系のオプションは無く、`-T -m` の列にも drop は現れない（long report の `Number of stat entries` で ISB の**個数**が分かるだけ）。よって **`dropped_packets` は v1 スコープから外す**。代替経路（tshark 側からの取得可否）は Track D で改めて検討する。
+
+**副産物**: 出力形式そのものが当初想定と違った。`-M` は long report 専用で表形式には効かない。実用になるのは `capinfos -T -m -Q <選択フィールド>` で、`-Q` により引用符付き CSV になり `encoding/csv` で読める。ただしコメント欄（`-k`）は改行を含みうるので**選択しない**こと。
+
+もう 1 点、**切り詰め判定はファイルヘッダの snaplen だけでは足りない**。`editcap -s 40` で切り詰めたファイルはヘッダが `(not set)` のまま、推定値の列に `40` が出る。`Packet size limit min/max (inferred)` と併せて判定する必要がある。
 
 ## 6. Reference reuse map
 
