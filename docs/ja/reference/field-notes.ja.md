@@ -12,25 +12,31 @@
 
 ### 症状
 
-本物のマルウェアを含む pcap に `extract_objects` をかけると、抽出そのものは成功して
-いるのに次のエラーで失敗する。
+本物のマルウェアを含む pcap に `extract_objects` をかけると、一部のオブジェクトが
+`objects` ではなく `skipped` に入って返る。
 
 ```json
 {
-  "code": "analysis_failed",
-  "message": "open /.../work/out/objects/_raw/Invoice&MSO-Request.doc: operation not permitted"
+  "source_name": "Invoice&MSO-Request.doc",
+  "bytes": 60416,
+  "reason": "could not be read (open /.../_raw/Invoice&MSO-Request.doc: operation not permitted) — on a host running antivirus this is normally the sample being quarantined mid-write, which is a true positive"
 }
 ```
 
 `operation not permitted` は EPERM である。本サーバーの権限設定やパス検証の問題では
-なく、**ホストの AV が書き込み途中のファイルを掴んで隔離した**結果である。失敗後は
-`_raw` がロールバックされるため、後から中身を調べる材料も残らない。
+なく、**ホストの AV が書き込み途中のファイルを掴んで隔離した**結果である。
 
 実測環境: macOS (Darwin 25.5) + Intego VirusBarrier のリアルタイム保護、tshark 4.0.17。
 
-**1 個でも隔離されると呼び出し全体が失敗する。** 演習 pcap の 1 本目では 3 オブジェクト
-中 2 個（`Invoice&MSO-Request.doc` と `knr.exe`）が検知され、良性の `ncsi.txt` を含めて
-1 件も返らなかった。部分成功はしない。
+> **v0.1.0 / v0.1.1 では呼び出し全体が `analysis_failed` で失敗していた。** 演習 pcap の
+> 1 本目では 3 オブジェクト中 2 個（`Invoice&MSO-Request.doc` と `knr.exe`）が検知され、
+> 良性の `ncsi.txt` を含めて 1 件も返らず、`_raw` もロールバックされるため後から調べる
+> 材料すら残らなかった。この実地ノートを書いたことでこれが不具合だと判明した — サイズ
+> 超過のオブジェクトは既に `skipped` に記録して処理を続けていたのだから、読めない
+> オブジェクトも同じ扱いにすべきだった。修正済みである。
+
+失われるのは**隔離されたオブジェクトだけ**である。バイト列を読めていないので SHA-256 も
+取れないが、それ以外の抽出結果には影響しない。
 
 ### なぜ起きるか
 
@@ -60,7 +66,7 @@ AV は**ファイル名や拡張子ではなく中身のシグネチャ**を見�
 |---|---|
 | 良性オブジェクトだけのキャプチャでは同じ操作が全件成功する | ツール・podman・パス設定は正常。切り分け対象から外せる |
 | 実行ファイルや文書を含むキャプチャでだけ EPERM | **検体が本物である**ことのシグナルとして使える |
-| エラー中のファイル名が AV の通知・隔離ログのファイル名と一致する | 確定。推測で切り分ける必要はない |
+| `source_name` が AV の通知・隔離ログのファイル名と一致する | 確定。推測で切り分ける必要はない |
 
 `container_failed`（podman が動いていない）や `path_not_allowed` とは別物である。
 エラーコードは `analysis_failed`、メッセージは必ず `_raw/` 配下のファイルを指す。

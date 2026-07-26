@@ -94,6 +94,18 @@ func usageDoc(inlineMaxBytes, defaultRowLimit int) map[string]any {
 			"unlimited_export":  "limit: 0 returns everything as a file, whatever the size.",
 			"timestamps":        "Epoch seconds plus a UTC ISO-8601 rendering. Never local time.",
 		},
+		"extracted_objects": map[string]any{
+			"shape": "extract_objects answers with a manifest, not the result_contract shape: " +
+				"`objects` for what was recovered and `skipped` for what was not. Read both — " +
+				"an empty `objects` with a populated `skipped` is a successful call.",
+			"skipped": "Each entry carries source_name, bytes and a reason. Over-size and " +
+				"over-budget objects are dropped deliberately; an object that could not be " +
+				"read is usually the host's antivirus quarantining a sample mid-write, which " +
+				"makes the skip itself a finding rather than a fault. A per-object failure " +
+				"never fails the call.",
+			"bytes": "Objects are stored as <sha256>.bin, mode 0600, no executable bit, and " +
+				"never returned inline. The hash alone usually pivots to threat intelligence.",
+		},
 		"errors": map[string]any{
 			"invalid_display_filter": "tshark's own message is in details.tshark_message, usually " +
 				"with the expression and the column it objected to. Fix and retry.",

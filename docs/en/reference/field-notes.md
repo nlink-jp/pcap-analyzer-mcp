@@ -9,30 +9,36 @@ Source of the measurements: the five exercise pcaps from Unit 42's "Using Wiresh
 Exporting Objects from a pcap", analysed with v0.1.0 on 2026-07-26. All four of
 HTTP / SMB / IMF / FTP-DATA were exercised.
 
-## 1. Antivirus fails `extract_objects` with EPERM
+## 1. Antivirus quarantine shows up as skipped objects
 
 ### Symptom
 
-Run `extract_objects` against a pcap carrying real malware and the call fails — even
-though the extraction itself succeeded:
+Run `extract_objects` against a pcap carrying real malware and some objects come back
+under `skipped` instead of `objects`:
 
 ```json
 {
-  "code": "analysis_failed",
-  "message": "open /.../work/out/objects/_raw/Invoice&MSO-Request.doc: operation not permitted"
+  "source_name": "Invoice&MSO-Request.doc",
+  "bytes": 60416,
+  "reason": "could not be read (open /.../_raw/Invoice&MSO-Request.doc: operation not permitted) — on a host running antivirus this is normally the sample being quarantined mid-write, which is a true positive"
 }
 ```
 
 `operation not permitted` is EPERM. It is not a permission bug or a path-validation
 problem in this server: **the host's AV grabbed and quarantined the file mid-write.**
-`_raw` is rolled back on failure, so nothing is left to inspect afterwards.
 
 Measured on macOS (Darwin 25.5) with Intego VirusBarrier real-time protection,
 tshark 4.0.17.
 
-**One quarantined object fails the whole call.** In the first exercise pcap, 2 of 3
-objects were detected (`Invoice&MSO-Request.doc` and `knr.exe`) and nothing came
-back at all — not even the benign `ncsi.txt`. There is no partial success.
+> **v0.1.0 and v0.1.1 failed the whole call instead**, with code `analysis_failed`. In the
+> first exercise pcap 2 of 3 objects were detected (`Invoice&MSO-Request.doc` and
+> `knr.exe`) and nothing came back at all — not even the benign `ncsi.txt` — and `_raw`
+> was rolled back, so there was nothing left to inspect either. Writing up this note is
+> what identified it as a defect: over-size objects were already being skipped and
+> recorded, and unreadable ones should have been too. Fixed since.
+
+What this costs you is **the quarantined object only**: no SHA-256, because the bytes
+were never readable. The rest of the extraction is unaffected.
 
 ### Why it happens
 
@@ -62,15 +68,20 @@ countermeasure" means exactly that — not that the defang design falls short.
 |---|---|
 | The same operation succeeds completely on a capture with only benign objects | The tool, podman and path config are fine — rule them out |
 | EPERM only on captures carrying executables or documents | Usable as a signal that **the sample is genuine** |
-| The filename in the error matches the one in the AV's notification or quarantine log | Confirmed; no need to guess |
+| The filename in `source_name` matches the one in the AV's notification or quarantine log | Confirmed; no need to guess |
 
-This is distinct from `container_failed` (podman not running) and `path_not_allowed`.
-The code is `analysis_failed` and the message always points at a file under `_raw/`.
+The `reason` always names a file under `_raw/`, which distinguishes this from a genuine
+tool failure (`container_failed` when podman is not running, `path_not_allowed`).
 
-### The fix — excluding the workspace from AV, and the risk that brings
+### Excluding the workspace from AV, and the risk that brings
 
-The practical workaround is to **add the workspace directory to the AV's exclusion
-list**. This is a deliberate removal of protection, so choose it knowing the cost.
+**Reach for this only if you need the quarantined object's own hash or bytes.** Since
+the readable objects now come back regardless, most investigations do not need it at
+all — and the skip list is itself a finding, because AV only fires on something real.
+
+If you do need it, the workaround is to **add the workspace directory to the AV's
+exclusion list**. This is a deliberate removal of protection, so choose it knowing
+the cost.
 
 ⚠️ The moment the exclusion is in place:
 

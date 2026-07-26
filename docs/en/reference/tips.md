@@ -285,9 +285,10 @@ answering.
   name lives in the manifest
 - **The SHA-256 usually finishes the investigation** — it pivots to threat intelligence
   without opening anything
-- ⚠️ **With real malware, AV may quarantine the file and fail `extract_objects` with
-  `operation not permitted`.** That is not a tool bug. The workaround, and the risk it
-  brings, are in the [field notes](field-notes.md)
+- ⚠️ **With real malware, AV may quarantine the file mid-write**, in which case it lands
+  in `skipped` with `operation not permitted` and no hash. That is not a tool bug, and
+  the other objects still come back. Read the [field notes](field-notes.md) before
+  reaching for an AV exclusion to recover it — it works, and it removes protection
 
 ## Pivoting to other MCP servers
 
