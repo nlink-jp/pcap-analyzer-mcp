@@ -120,15 +120,17 @@ Phase 0 時点で未解決。Track 着手前または着手中に実測で解決
 
 含まれない。出力はアドレス / ポート / フレーム数 / バイト数 / 相対開始 / 継続時間のみ。さらに**行順が `tcp.stream` の順とも一致しない**（2 ストリームの合成キャプチャで stream 0 が 2 行目に出た）ため、行位置からの推定もできない。設計どおり `-T fields -e tcp.stream ...` の自前集約で実装する。
 
-### Q5-2. 単一ファイル bind mount の virtiofs 挙動
+### Q5-2. 単一ファイル bind mount の virtiofs 挙動 — **Resolved（Track D）**
 
-親ディレクトリ ro より blast radius が小さいが、macOS の Podman Machine 越しの挙動が未検証。動作するなら既定を単一ファイルに寄せる。（Track D）
+**動作する。** macOS / applehv の virtiofs 越しに `-v <file>:/evidence/capture:ro` が通り、コンテナ内から見えるのは当該ファイルのみで**兄弟ファイルは一切見えない**。0600 のファイルも `--userns=keep-id:uid=1000,gid=1000` の有無にかかわらず読めた（macOS では virtiofs が所有権を写像するため。native Linux rootless では keep-id が必要になるので指定は維持する）。よって既定を単一ファイルマウントに変更した（ADR-0004 改定）。コンテナ側パスが `/evidence/capture` 固定になる副次効果もある。
 
 関連する実測（Track C）: `podman machine inspect` は共有パスの一覧を**公開していない**（podman 6.0.2 / applehv には `.Mounts` フィールドが無い）。そのため `doctor` は一覧を引くのではなく、実際に ro マウントを試みて到達性を判定する方式にした。同じ手法が単一ファイルマウントの検証にも使える。
 
 ### Q5-3. `create_workspace` のフルパス所要時間
 
-`capinfos` + SHA-256 が pcap サイズに対してどれだけかかるか。`async` の要否をエージェントに案内する閾値の根拠になる。（Track D、実 pcap で計測）
+`capinfos` + SHA-256 が pcap サイズに対してどれだけかかるか。`async` の要否をエージェントに案内する閾値の根拠になる。
+
+**部分的に判明（Track D）**: 504 バイトのキャプチャで `Create` 全体が **394ms**。これは実質コンテナ起動 1 回分の下限であり、ADR-0002 で見積もった 0.3〜1.0 秒と整合する。**サイズ依存の傾きは未計測** — 大きい実 pcap が要るため、判断閾値は引き続き Track F までに詰める。
 
 なお `capinfos` はファイル全体の SHA-256 を自前で算出して返す。ホスト側 Go の計算と独立した 2 経路になるため、証跡としてはクロスチェックに使える。
 

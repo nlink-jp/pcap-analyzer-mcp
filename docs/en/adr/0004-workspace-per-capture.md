@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-26
 - Driver: magi
+- Revisions: 2026-07-26 — the parent-directory read-only mount became a **single-file** read-only mount after Track D measurement
 - Generalises to: none
 
 ---
@@ -48,14 +49,16 @@ On-disk layout:
 
 ### Read-only mount, no copying
 
-**The parent directory of the pcap is mounted read-only at `/evidence`.** The pcap is never copied into the workspace.
+**The capture file itself is mounted read-only at `/evidence/capture`.** It is never copied into the workspace.
 
 ```
--v <parent dir of the pcap>:/evidence:ro
+-v <symlink-resolved pcap>:/evidence/capture:ro
 -v <workspace>/work:/work
 ```
 
 Because ADR-0002 starts a container per call, mounts can be decided per call. **There is no need to declare a fixed evidence root in config.**
+
+**The original plan was a parent-directory mount**, because it was unclear whether a single-file bind mount survives macOS virtiofs. Track D measured it: it does, and siblings are then invisible to the container. A secondary benefit is that **the container-side path is fixed at `/evidence/capture`** — the host filename never appears in a container path or an argv, so a name like `--not-a-flag.pcap` cannot be read as an option.
 
 ### `workspace_dir` is supplied per call by the agent
 
@@ -70,7 +73,7 @@ Taken as a tool argument rather than from config: the agent knows where its writ
 At `create_workspace` time, the following run once and are cached in `meta.json`:
 
 - The input pcap's **SHA-256**
-- The output of `capinfos -M` (packet count / time range / snaplen / drop count, etc.)
+- The output of `capinfos -T -m -Q <selected fields>` (packet count / time range / snaplen / truncation verdict, etc.)
 - The **tshark version and image digest** used
 
 Afterwards `describe_workspace` only reads this JSON and never starts a container.
@@ -91,7 +94,6 @@ Ring-buffer captures (`cap_00001_*.pcap` …) form one logical capture across a 
 
 **Negative:**
 
-- **Mounting the pcap's parent directory read-only also exposes sibling files to the container.** A single-file bind mount would have a smaller blast radius, but the behavior across macOS virtiofs is unverified, so parent-directory ro is the default (Phase 1 Open Question)
 - **With `allowed_paths` defaulting to unrestricted, the server will open any readable file on the host as a pcap unless configured.** This is a deliberate tradeoff for single-user local use; a shared deployment must set it
 - The 1:1 rule means comparing two captures requires the agent to create two workspaces and correlate the results itself
 - v1 cannot handle split captures

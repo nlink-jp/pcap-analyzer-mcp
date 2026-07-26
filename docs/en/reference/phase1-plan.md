@@ -120,15 +120,17 @@ Unresolved as of Phase 0. To be settled empirically before or during the relevan
 
 It does. The output carries only addresses, ports, frame and byte counts, relative start and duration. Worse, **its row order does not match stream order either** (on a two-stream synthetic capture, stream 0 appeared on the second row), so the index cannot be inferred from position. `list_conversations` will aggregate `-T fields -e tcp.stream ...` server-side as designed.
 
-### Q5-2. virtiofs behavior for single-file bind mounts
+### Q5-2. virtiofs behavior for single-file bind mounts — **Resolved (Track D)**
 
-Smaller blast radius than a parent-directory ro mount, but behavior across macOS Podman Machine is unverified. If it works, make single-file the default. (Track D)
+**It works.** `-v <file>:/evidence/capture:ro` passes through virtiofs on macOS / applehv, the container sees only that file, and **siblings are invisible**. A 0600 file was readable with or without `--userns=keep-id:uid=1000,gid=1000` (virtiofs maps ownership on macOS; keep-id is retained because native rootless Linux does need it). Single-file is therefore the default (ADR-0004 amended), with the side benefit that the container-side path is fixed at `/evidence/capture`.
 
 Related measurement (Track C): `podman machine inspect` **does not expose the share list** (podman 6.0.2 / applehv has no `.Mounts` field). So `doctor` does not enumerate shares — it attempts a real read-only mount and reports the outcome. The same technique will answer this question.
 
 ### Q5-3. Full-pass duration for `create_workspace`
 
-How long `capinfos` + SHA-256 take relative to pcap size. This is the basis for guidance to the agent on when `async` is needed. (Track D, measured on real pcaps)
+How long `capinfos` + SHA-256 take relative to pcap size. This is the basis for guidance to the agent on when `async` is needed.
+
+**Partially answered (Track D)**: a 504-byte capture takes **394ms** end to end in `Create`. That is effectively the floor — one container start — and matches the 0.3–1.0s estimated in ADR-0002. **The size-dependent slope is unmeasured**; it needs a large real capture, so the guidance threshold stays open until Track F.
 
 Note that `capinfos` computes and reports the file's SHA-256 itself. That is an independent second path alongside the host-side Go computation, usable as a provenance cross-check.
 

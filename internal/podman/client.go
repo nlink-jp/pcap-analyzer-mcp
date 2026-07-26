@@ -148,6 +148,79 @@ func (c *Client) Build(ctx context.Context, out io.Writer, tag, dockerfile strin
 	return nil
 }
 
+// Mount is a host→container bind mount.
+type Mount struct {
+	HostPath      string
+	ContainerPath string
+	ReadOnly      bool
+}
+
+func (m Mount) spec() string {
+	s := m.HostPath + ":" + m.ContainerPath
+	if m.ReadOnly {
+		s += ":ro"
+	}
+	return s
+}
+
+// RunOnceOpts describes a single throwaway container run (ADR-0002).
+type RunOnceOpts struct {
+	Image  string
+	Cmd    []string
+	Mounts []Mount
+
+	CPU     string
+	Memory  string
+	Network string
+	Userns  string
+
+	// DropAllCaps adds --cap-drop=ALL. Analysis never needs a capability;
+	// leaving this false is only useful in tests.
+	DropAllCaps bool
+}
+
+// Result is the outcome of a single container run.
+type Result struct {
+	Stdout   []byte
+	Stderr   []byte
+	ExitCode int
+}
+
+// RunOnce starts a container, waits for it, and removes it.
+//
+// A non-zero ExitCode is not an error: tshark uses exit codes to report things
+// the caller has to interpret (a bad display filter, an unreadable capture).
+// A returned error means podman itself failed.
+func (c *Client) RunOnce(ctx context.Context, opts RunOnceOpts) (*Result, error) {
+	args := []string{"run", "--rm"}
+	if opts.Network != "" {
+		args = append(args, "--network", opts.Network)
+	}
+	if opts.DropAllCaps {
+		args = append(args, "--cap-drop=ALL")
+	}
+	if opts.CPU != "" {
+		args = append(args, "--cpus", opts.CPU)
+	}
+	if opts.Memory != "" {
+		args = append(args, "--memory", opts.Memory)
+	}
+	if opts.Userns != "" {
+		args = append(args, "--userns", opts.Userns)
+	}
+	for _, m := range opts.Mounts {
+		args = append(args, "-v", m.spec())
+	}
+	args = append(args, opts.Image)
+	args = append(args, opts.Cmd...)
+
+	stdout, stderr, code, err := c.runner.Run(ctx, c.binary, args...)
+	if err != nil && code == -1 {
+		return nil, &ErrNotInstalled{Err: err}
+	}
+	return &Result{Stdout: stdout, Stderr: stderr, ExitCode: code}, nil
+}
+
 // CanMount reports whether hostPath can be bind-mounted into a container.
 //
 // On macOS this is the question that matters and the one podman will not

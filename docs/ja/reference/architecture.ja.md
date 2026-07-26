@@ -45,7 +45,7 @@
 │  解析コンテナ (debian:12-slim + tshark, digest pin)  │
 │    network=none / 非root / --cap-drop=ALL            │
 │                                                      │
-│    /evidence  ro  ← pcap の親ディレクトリ            │
+│    /evidence/capture ro ← pcap ファイルそのもの      │
 │    /work      rw  ← <workspace>/work                 │
 └──────────────────────────────────────────────────────┘
 ```
@@ -61,7 +61,7 @@
 | **pcap のバイト列 → tshark** | **最も危険な境界。** 攻撃者制御下のデータを dissector が解釈する。`network=none` / 非 root / `--cap-drop=ALL` / ro マウントで封じ込める |
 | **tshark 出力 → エージェント** | **2 番目に危険な境界。** ペイロードは攻撃者が制御するテキストであり、ノンス XML で隔離する（ADR-0007） |
 
-`/evidence` が ro であることにより、dissector の脆弱性を突かれても**証拠原本は改変されない**。書き込み可能なのは `/work` のみで、これはワークスペース内に閉じている。
+`/evidence/capture` が ro であることにより、dissector の脆弱性を突かれても**証拠原本は改変されない**。書き込み可能なのは `/work` のみで、これはワークスペース内に閉じている。
 
 ## 3. Data flow（正常系シーケンス）
 
@@ -70,8 +70,8 @@
 1. `workspace_dir` の書き込み可否を確認、`pcap_path` を symlink 解決し `allowed_paths` を検査
 2. `workspace_id` を生成（pcap のベース名 + 短いハッシュ）、`<workspace_dir>/<id>/work/{tmp,out,out/objects}` を作成
 3. ホスト側で pcap の **SHA-256** を計算
-4. `podman run --rm -v <pcap の親>:/evidence:ro -v <ws>/work:/work <image> capinfos -T -m -Q <選択フィールド> /evidence/<name>` を実行
-5. `tshark --version` とイメージ digest を取得
+4. `podman run --rm -v <pcap>:/evidence/capture:ro -v <ws>/work:/work <image> sh -c 'tshark --version; echo <区切り>; capinfos -T -m -Q <選択フィールド> /evidence/capture'` を実行（tshark 版数と capinfos を **1 回のコンテナ起動**で取る）
+5. イメージ ID を `podman image inspect` で取得（コンテナ不要）
 6. 3〜5 を `<ws>/meta.json` に書き込む
 7. `workspace_id` と要約を返す
 
@@ -82,7 +82,7 @@
 ### 3.3 query_packets(workspace_id, filter, fields, limit, format, async?)
 
 1. `meta.json` を読み、pcap パスとマウント情報を得る
-2. `podman run --rm ... tshark -r /evidence/<name> -Y <filter> -T fields -e <field>... -E header=y -E separator=/t`
+2. `podman run --rm ... tshark -r /evidence/capture -Y <filter> -T fields -e <field>... -E header=y -E separator=/t`
 3. stdout を行単位で読みながら JSON 行に変換し、**バイト数を数えながら**積む
 4. `inline_max_bytes` を超えた時点で `work/out/<n>.jsonl` へ切り替え、以降はストリーム書き出し
 5. `truncated` になった場合のみ、件数取得のための追加パス（`-Y <filter> -T fields -e frame.number` を数える）を実行して `matched` を得る
@@ -104,7 +104,7 @@
 
 ### 3.7 extract_objects(workspace_id, protocol, async?)
 
-1. `tshark -r ... --export-objects <proto>,/work/out/objects/_raw` を実行
+1. `tshark -r /evidence/capture --export-objects <proto>,/work/out/objects/_raw` を実行
 2. 出力された各ファイルについて SHA-256 を計算し、`<sha256>.bin`（0600）にリネーム
 3. 元の名前 / Content-Type / URI / フレーム番号を `manifest.json` に記録（攻撃者由来文字列はノンス XML でラップ）
 4. `_raw` を削除し、マニフェストとパスのみ返す。**バイト列は返さない**

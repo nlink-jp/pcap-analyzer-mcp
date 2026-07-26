@@ -20,6 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   274MB), `internal/podman`, a working `build-runtime` (with `--force`) and
   `doctor`, and the static `describe_runtime` manifest with a Dockerfile
   drift test
+- Phase 1 Track D: `internal/workspace` — workspace creation and listing,
+  `meta.json`, capinfos parsing, host-side SHA-256, path validation, and
+  `podman.RunOnce`; plus integration tests that drive the real image
 
 ### Changed
 
@@ -27,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CONVENTIONS.md §Release Archive Standard (effective 2026-07-12)
 - The analysis image deletes `/usr/bin/dumpcap` rather than only declining its
   setuid bit (ADR-0003 amended)
+- The capture is bind-mounted as a single file at the fixed container path
+  `/evidence/capture`, not as its parent directory (ADR-0004 amended). Siblings
+  are no longer exposed, and the host filename never reaches an argv
 - Docs corrected against the built image: `--export-objects` supports six
   protocols (not four), `capinfos` metadata is read via `-T -m -Q`
   (not `-M`), truncation must be judged from the inferred snaplen as well as

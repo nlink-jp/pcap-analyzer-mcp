@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-26
 - Driver: magi
+- Revisions: 2026-07-26 — Track D の実測を受け、親ディレクトリ ro マウントを**単一ファイル ro マウント**に変更
 - Generalises to: なし
 
 ---
@@ -48,14 +49,16 @@ pcap は他のどれとも条件が異なる。**入力が既存かつ巨大（G
 
 ### read-only マウント、複製しない
 
-`create_workspace` に渡された pcap の**親ディレクトリを `/evidence` に read-only でマウント**する。pcap をワークスペースにコピーすることはしない。
+**pcap ファイルそのものを `/evidence/capture` に read-only でマウント**する。pcap をワークスペースにコピーすることはしない。
 
 ```
--v <pcap の親ディレクトリ>:/evidence:ro
+-v <symlink 解決後の pcap>:/evidence/capture:ro
 -v <workspace>/work:/work
 ```
 
 ADR-0002 でコンテナを呼び出しごとに起動すると決めたため、マウントは呼び出しごとに決定できる。**config で固定の evidence root を宣言する必要はない。**
+
+**当初は親ディレクトリの ro マウントを予定していた**（単一ファイル bind mount が macOS の virtiofs 越しに動くか不明だったため）。Track D で実測したところ動作し、しかも兄弟ファイルはコンテナから一切見えないことを確認したので、単一ファイルに変更した。副次的な利点として、**コンテナ側のパスが `/evidence/capture` に固定される** — ホスト側のファイル名がコンテナのパスにも argv にも一切現れないため、`--not-a-flag.pcap` のような名前が引数として解釈される余地が原理的に無くなる。
 
 ### `workspace_dir` は呼び出しごとにエージェントが指定する
 
@@ -70,7 +73,7 @@ config ではなくツール引数として受け取る。エージェントは�
 `create_workspace` 時に以下を一度だけ実行し、`meta.json` にキャッシュする。
 
 - 入力 pcap の **SHA-256**
-- `capinfos -M` の結果（パケット数 / 時間範囲 / snaplen / drop 数 など）
+- `capinfos -T -m -Q <選択フィールド>` の結果（パケット数 / 時間範囲 / snaplen / 切り詰め判定 など）
 - 使用した **tshark バージョンとイメージ digest**
 
 以降 `describe_workspace` はこの JSON を読むだけで、コンテナを起動しない。
@@ -91,7 +94,6 @@ config ではなくツール引数として受け取る。エージェントは�
 
 **Negative:**
 
-- **pcap の親ディレクトリごと ro でマウントするため、同一ディレクトリ内の兄弟ファイルもコンテナから見える。** 単一ファイルの bind mount のほうが blast radius は小さいが、macOS の virtiofs 越しの挙動が未検証であるため、既定は親ディレクトリ ro とする（Phase 1 Open Question）
 - `allowed_paths` の既定を無制限にしたため、**設定しない限りサーバーはホスト上の任意の読み取り可能なファイルを pcap として開こうとする。** ローカル単独利用を前提とした割り切りであり、共有環境に置く場合は必ず設定する必要がある
 - 1 pcap : 1 workspace の制約により、2 つのキャプチャを比較する分析ではエージェントが 2 つのワークスペースを作り、結果の突き合わせを自ら行うことになる
 - v1 では分割キャプチャを扱えない

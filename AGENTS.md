@@ -10,14 +10,16 @@ network-less container; the capture is mounted **read-only and never copied**.
 Results come back inline when small and as JSONL files in the workspace when
 large.
 
-**Status: Phase 1 Tracks A–C complete.** The MCP protocol layer, the analysis
-image, `build-runtime` and `doctor` all work. No tools are registered yet, so
-`serve` still reports the track that will wire it up.
+**Status: Phase 1 Tracks A–D complete.** The MCP protocol layer, the analysis
+image, `build-runtime`, `doctor`, and the workspace layer all work and are
+tested against real podman. No MCP tools are registered yet, so `serve` still
+reports the track that will wire it up.
 
 ## Build / test
 
 - `make build` — never `go build` directly (writes to `dist/`, injects the version)
 - `make test` — all Go unit tests
+- `go test -tags integration ./internal/workspace/` — drives real podman and the analysis image (needs `make runtime-image` first)
 - `make runtime-image` — builds the tshark container image (wraps `pcap-analyzer-mcp build-runtime`)
 - `make build-all` — cross-compile darwin/arm64 + linux/{amd64,arm64} + windows/amd64
 - `make help` — list targets
@@ -38,7 +40,7 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 | `internal/jsonrpc/` | JSON-RPC 2.0 types | B ✅ |
 | `internal/mcpserver/` | MCP protocol (initialize, tools/list, tools/call) | B ✅ |
 | `internal/toolerr/` | Structured `{code, message, details}` tool errors | B ✅ |
-| `internal/workspace/` | Workspace creation, `meta.json`, per-call `podman run` | D |
+| `internal/workspace/` | Workspace creation, `meta.json`, capinfos parsing, path validation | D ✅ |
 | `internal/tshark/` | tshark argument assembly and output parsing | E |
 | `internal/output/` | The output contract: byte threshold, `matched`, `sample`, JSONL | E |
 | `internal/job/` | Async jobs + `check_job` | F |
@@ -53,7 +55,7 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 - **ADR-0001**: tshark is the backend. Display filters pass through from the agent verbatim. Zeek is deferred, and adopting it would mean *new tools*, not a backend swap.
 - **ADR-0002**: Containers are **ephemeral, one per `podman run --rm` per call**. No persistent container, no `podman exec`, no orphan scanning. tshark is stateless, so there is nothing to persist.
 - **ADR-0003**: Lean image — `debian:12-slim` (digest-pinned) + `tshark` only, 274MB. No DuckDB, no Python, therefore **no parquet**; exports are JSONL / CSV. The dumpcap binary is deleted, so the image cannot capture.
-- **ADR-0004**: **1 pcap : 1 workspace.** The capture's parent directory is mounted `ro` at `/evidence` and never copied. `workspace_dir` is an argument, not config. `allowed_paths` is a guardrail (default: unrestricted), not a sandbox boundary.
+- **ADR-0004**: **1 pcap : 1 workspace.** The capture file itself is mounted `ro` at the fixed path `/evidence/capture` and never copied. `workspace_dir` is an argument, not config. `allowed_paths` is a guardrail (default: unrestricted), not a sandbox boundary.
 - **ADR-0005**: Output contract — threshold in **bytes not rows**, response shape identical inline vs. file, `matched` always returned, `sample` attached for file results, large output is **JSONL not a JSON array**.
 - **ADR-0006**: Async for heavy tools only (`create_workspace`, `protocol_hierarchy`, `list_conversations`, `query_packets`, `extract_objects`). Validation stays synchronous. Jobs are in-memory; `job_not_found` means "just re-run it".
 - **ADR-0007**: Payload safety, all four in the same commit as the payload code — nonce XML isolation with the framing **first**, defang to `<sha256>.bin` mode 0600, payload never logged, ranged reads via `offset`/`length`.
@@ -71,7 +73,7 @@ no container. Expect it to be the most-called tool.
 ## Gotchas
 
 - **`-z conv,tcp` does not carry `tcp.stream`** — confirmed against tshark 4.0.17. Its row order does not even match stream order, so there is no way to recover the index from it. `list_conversations` is the entry point to `follow_stream`, so build it from `-T fields -e tcp.stream ...` with server-side aggregation.
-- **Truncated captures.** A capture taken with a small snaplen has no payload. Surface `snaplen` / `truncated` from `describe_workspace` and return `payload_unavailable_truncated_capture` *before* running a payload tool, or the agent will read the empty result as a transient failure and retry forever.
+- **Truncated captures.** A capture taken with a small snaplen has no payload. `truncated` comes from capinfos' *inferred* limits, never the file header — `editcap -s 40` leaves the header at `(not set)`. Surface it from `describe_workspace` and return `payload_unavailable_truncated_capture` *before* running a payload tool, or the agent will read the empty result as a transient failure and retry forever.
 - **`capinfos -T -m -Q` with selected fields**, not `-M` — `-M` only affects long reports. `-Q` quotes values so `encoding/csv` reads them. Never select `-k` (comment): it contains newlines. And `capinfos` does **not** report pcapng ISB drop counts, so `dropped_packets` is out of v1.
 - **Debian's `tshark` package prompts via debconf** about setuid dumpcap. Non-interactive install plus `debconf-set-selections` setting it to false — and note that this leaves the dumpcap binary in place, which is why the Dockerfile deletes it.
 - **tshark warns when run as root.** The image runs as `USER 1000`.

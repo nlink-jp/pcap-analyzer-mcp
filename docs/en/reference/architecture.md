@@ -45,7 +45,7 @@ Following `feedback_single_binary_subcommand`, one binary hosts four subcommands
 │  Analysis container (debian:12-slim + tshark, digest pin)│
 │    network=none / non-root / --cap-drop=ALL              │
 │                                                          │
-│    /evidence  ro  ← parent directory of the pcap         │
+│    /evidence/capture ro ← the capture file itself        │
 │    /work      rw  ← <workspace>/work                     │
 └──────────────────────────────────────────────────────────┘
 ```
@@ -61,7 +61,7 @@ Following `feedback_single_binary_subcommand`, one binary hosts four subcommands
 | **pcap bytes → tshark** | **The most dangerous boundary.** Dissectors interpret attacker-controlled data. Contained by `network=none` / non-root / `--cap-drop=ALL` / read-only mount |
 | **tshark output → agent** | **The second most dangerous boundary.** Payload is attacker-controlled text, isolated in nonce XML (ADR-0007) |
 
-Because `/evidence` is read-only, **the original evidence cannot be modified** even if a dissector vulnerability is exploited. The only writable area is `/work`, confined within the workspace.
+Because `/evidence/capture` is read-only, **the original evidence cannot be modified** even if a dissector vulnerability is exploited. The only writable area is `/work`, confined within the workspace.
 
 ## 3. Data flow (happy path)
 
@@ -70,8 +70,8 @@ Because `/evidence` is read-only, **the original evidence cannot be modified** e
 1. Verify `workspace_dir` is writable; symlink-resolve `pcap_path` and check `allowed_paths`
 2. Generate a `workspace_id` (pcap basename + short hash) and create `<workspace_dir>/<id>/work/{tmp,out,out/objects}`
 3. Compute the pcap's **SHA-256** on the host
-4. Run `podman run --rm -v <pcap parent>:/evidence:ro -v <ws>/work:/work <image> capinfos -T -m -Q <selected fields> /evidence/<name>`
-5. Obtain `tshark --version` and the image digest
+4. Run `podman run --rm -v <pcap>:/evidence/capture:ro -v <ws>/work:/work <image> sh -c 'tshark --version; echo <delimiter>; capinfos -T -m -Q <selected fields> /evidence/capture'` — the tshark version and capinfos come from **one container start**
+5. Obtain the image ID via `podman image inspect` (no container)
 6. Write steps 3–5 into `<ws>/meta.json`
 7. Return the `workspace_id` and a summary
 
@@ -82,7 +82,7 @@ Read `<ws>/meta.json`, scan `work/out/` for `outputs[]`, and return. **No contai
 ### 3.3 query_packets(workspace_id, filter, fields, limit, format, async?)
 
 1. Read `meta.json` for the pcap path and mount information
-2. `podman run --rm ... tshark -r /evidence/<name> -Y <filter> -T fields -e <field>... -E header=y -E separator=/t`
+2. `podman run --rm ... tshark -r /evidence/capture -Y <filter> -T fields -e <field>... -E header=y -E separator=/t`
 3. Convert stdout line by line into JSON records, **counting bytes while accumulating**
 4. Once `inline_max_bytes` is exceeded, switch to `work/out/<n>.jsonl` and stream from there
 5. Only when `truncated`, run an extra counting pass (`-Y <filter> -T fields -e frame.number`) to obtain `matched`
@@ -104,7 +104,7 @@ Collect `-T fields -e tcp.stream -e ip.src -e tcp.srcport -e ip.dst -e tcp.dstpo
 
 ### 3.7 extract_objects(workspace_id, protocol, async?)
 
-1. Run `tshark -r ... --export-objects <proto>,/work/out/objects/_raw`
+1. Run `tshark -r /evidence/capture --export-objects <proto>,/work/out/objects/_raw`
 2. Compute SHA-256 for each emitted file and rename to `<sha256>.bin` (mode 0600)
 3. Record the original name / Content-Type / URI / frame number in `manifest.json` (attacker-derived strings wrapped in nonce XML)
 4. Remove `_raw`; return the manifest and paths only. **Bytes are never returned**
