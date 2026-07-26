@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-26
 - Driver: magi
-- Revisions: 2026-07-26 — how "never logged" is enforced was made concrete during Track G; the ranged-read section was rewritten after a self-review found three gaps; how far wrapping extends was made explicit after an independent review
+- Revisions: 2026-07-26 — how "never logged" is enforced was made concrete during Track G; the ranged-read section was rewritten after a self-review found three gaps; how far wrapping extends was made explicit after an independent review; the "EDR false positives" claim in Consequences was corrected after measuring against real malware (defang addresses accidental execution and filename-borne attacks; AV detection is a true positive and is not something to prevent)
 - Generalises to: candidate org ADR (`.github/adr/`) — applies to every tool that returns attacker-controlled content to an agent
 
 ---
@@ -16,7 +16,7 @@ Including them changes the standing of the security design. Measures that were n
 
 **Threat 1: prompt injection.** The return value of `follow_stream` is a channel through which **fully attacker-controlled text enters the agent's context directly**. Put "ignore all previous instructions…" in an HTTP response body or SMTP message inside a malicious pcap and it arrives verbatim. And since this tool exists to "analyze suspicious traffic," **adversarial input is the normal case, not the exception** — structurally riskier than ordinary web scraping or document ingestion.
 
-**Threat 2: writing live malware.** What `--export-objects` emits is, in effect, "a file that might be malware." Writing it into the user's workspace on their Mac under its original filename (`invoice.exe`) invites XProtect / EDR false positives and quarantine, and the risk of accidental execution is not zero.
+**Threat 2: writing live malware.** What `--export-objects` emits is, in effect, "a file that might be malware." Writing it into the user's workspace on their Mac under its original filename (`invoice.exe`) invites XProtect / EDR detection and quarantine, and the risk of accidental execution is not zero.
 
 **Threat 3: PII / credential leakage.** pcap payloads are dense with credentials, cookies, and personal data. If that lands in the server's log file, it is persisted in cleartext somewhere nobody intended.
 
@@ -95,19 +95,21 @@ Output is returned as direction-separated chunks (client→server / server→cli
 **Positive:**
 
 - In this tool's intended use — analyzing adversarial pcaps — the path by which an agent could follow attacker instructions is structurally closed
-- Defanged artifacts sharply reduce EDR false positives and accidental-execution risk. SHA-256-first returns let most investigations complete without touching the bytes
+- Defanged artifacts sharply reduce two risks: **accidental execution**, and **a filename that is itself an attack** (the `object1.text%2fplain` measured during Track G — directory traversal if it were ever decoded onto a path). SHA-256-first returns let most investigations complete without touching the bytes
 - Blocking payload from the logging path at the type level prevents leaks caused by review oversights
 - Extracted SHA-256 / IP / domain / URL values pivot directly into the same series' `abuse-lookup` / `whois-lookup` / `urlscan-lookup`
 
 **Negative:**
 
 - **Nonce XML wrapping is not a complete defense.** A model may still ignore the wrapper. The documentation must state plainly that this is mitigation, not a solution
+- **Defang does not prevent AV / EDR detection** (measured 2026-07-26). Detection fires on **content signatures**, not on filenames or extensions, so renaming to `<sha256>.bin` changes nothing. And that detection is a **true positive**, not a false one — the file really is malware, so preventing it is **not a goal**; suppressing it would be evasion. The consequence is that `extract_objects` can fail with EPERM on any host running AV. How it breaks, how to tell it apart, and the cost of the workaround are recorded in the [field notes](../reference/field-notes.md)
 - Not saving the original filename adds a manifest lookup when **the filename itself is the subject of analysis** (malware naming conventions, for example)
 - Keeping payload out of logs **makes debugging harder**. Reproduction requires re-analyzing the same pcap locally
 - Ranged reads mean multiple calls are needed to see the whole picture of a large stream
 
 ## See also
 
+- [Field notes](../reference/field-notes.md) — **threat 2 confirmed in the field**: how AV actually breaks a run on real malware, the risk the workaround (excluding the workspace from AV) brings, and the fact that defang does not prevent AV detection
 - ADR-0005: Output contract (size handling follows it)
 - ADR-0004: Workspace directory layout
 - Related org guidance: `feedback_prompt_injection_guard` / `feedback_prompt_injection_position` / `feedback_no_prose_prohibition_lists` / `feedback_pii_protection`
