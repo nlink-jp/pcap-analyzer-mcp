@@ -64,3 +64,10 @@ runtime-image: build
 ## help: Show available targets
 help:
 	@grep -E '^## ' $(MAKEFILE_LIST) | sed 's/## //'
+
+# Homebrew tap generation (see scripts/release-brew.mk). After `make package`,
+# `make brew` generates this formula from the built darwin-arm64 zip into the
+# local nlink-jp/homebrew-tap checkout. The package target is unchanged.
+BREW_KIND := formula
+BREW_DESC := MCP server for pcap/pcapng analysis via a containerized, version-pinned tshark
+include scripts/release-brew.mk
