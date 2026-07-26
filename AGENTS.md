@@ -10,10 +10,10 @@ network-less container; the capture is mounted **read-only and never copied**.
 Results come back inline when small and as JSONL files in the workspace when
 large.
 
-**Status: Phase 1 Tracks A–D complete.** The MCP protocol layer, the analysis
-image, `build-runtime`, `doctor`, and the workspace layer all work and are
-tested against real podman. No MCP tools are registered yet, so `serve` still
-reports the track that will wire it up.
+**Status: Phase 1 Tracks A–E complete — the read-only edition works.** `serve`
+registers nine tools and has been driven end to end against real podman. What
+is left is Track F (async jobs) and Track G (payload tools), so `follow_stream`
+and `extract_objects` do not exist yet.
 
 ## Build / test
 
@@ -41,11 +41,11 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 | `internal/mcpserver/` | MCP protocol (initialize, tools/list, tools/call) | B ✅ |
 | `internal/toolerr/` | Structured `{code, message, details}` tool errors | B ✅ |
 | `internal/workspace/` | Workspace creation, `meta.json`, capinfos parsing, path validation | D ✅ |
-| `internal/tshark/` | tshark argument assembly and output parsing | E |
-| `internal/output/` | The output contract: byte threshold, `matched`, `sample`, JSONL | E |
+| `internal/tshark/` | tshark argument assembly and output parsing | E ✅ |
+| `internal/output/` | The output contract: byte threshold, `matched`, `sample`, JSONL | E ✅ |
 | `internal/job/` | Async jobs + `check_job` | F |
 | `internal/payload/` | Nonce XML isolation, defang | G |
-| `internal/tools/` | The 11 tool handlers | E, G |
+| `internal/tools/` | Tool handlers — 9 registered; payload tools land in G | E ✅, G |
 | `testdata/gen/` | gopacket fixture generators (synthetic captures only) | H |
 | `e2e/` | Dummy MCP client harness (build tag `e2e`) | H |
 | `docs/{en,ja}/` | RFP, ADR-0001–0007, architecture, phase1-plan | Phase 0/1 ✅ |
@@ -80,6 +80,10 @@ no container. Expect it to be the most-called tool.
 - **macOS virtiofs.** Captures outside the machine's shares cannot be mounted. `podman machine inspect` does not expose the share list, so `doctor` finds out by attempting a real read-only mount.
 - **Podman Machine memory.** 4GB default is not enough for a full pass over a large capture; 8GB recommended.
 - Time values are returned as **epoch plus UTC ISO-8601**, never local-formatted.
+- **`CountArgs` must emit a header row.** The same reader parses queries and the count pass; without `-E header=y` the first packet is eaten as column names and every `matched` is one short. There is a regression test.
+- **A row limit kills the container on purpose.** `StreamResult.Stopped` says so — treat a non-zero exit as tshark's fault only when `Stopped` is false, or every limited query reports a container failure.
+- **`rows` is a pointer.** An empty inline result must serialize as `[]`; under `omitempty` a plain slice vanishes and becomes indistinguishable from a file-backed result. `delivery` states the channel outright.
+- **stdout is the protocol channel.** All logging goes to stderr; a stray `fmt.Println` corrupts the JSON-RPC stream.
 
 ## Conventions (organization-wide)
 

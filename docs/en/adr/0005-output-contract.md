@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-26
 - Driver: magi
+- Revisions: 2026-07-26 — a `delivery` field was added during Track E
 - Generalises to: candidate org ADR (`.github/adr/`) — applies to any MCP tool returning large results
 
 ---
@@ -35,6 +36,7 @@ Whether a result is returned inline or written to a file is decided by **the byt
   "matched": 48213,
   "returned": 200,
   "truncated": true,
+  "delivery": "file",
   "rows": [ "... inline only ..." ],
   "result_file": "<workspace>/work/out/q3.jsonl",
   "result_bytes": 48231904,
@@ -43,6 +45,8 @@ Whether a result is returned inline or written to a file is decided by **the byt
 ```
 
 Shared fields always sit in the same place with the same meaning, so the agent never branches.
+
+**`delivery` (`"inline"` / `"file"`) was added during Track E.** The original design let the agent infer the channel from which keys were present — `rows` for inline, `result_file` for a file. Implementation showed that **an inline result with zero matches has an empty `rows`, which `omitempty` drops, making it indistinguishable from a file-backed result.** `rows` became a pointer so an empty array survives, and an explicit field replaced the inference.
 
 ### 3. `matched` is always returned
 

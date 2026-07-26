@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-26
 - Driver: magi
+- Revisions: 2026-07-26 — Track E で `delivery` フィールドを追加
 - Generalises to: 組織 ADR 候補（`.github/adr/`）— 大きい結果を返す MCP ツール全般に適用できる
 
 ---
@@ -35,6 +36,7 @@ pcap 固有の事情として、**行数では出力サイズを制御できな�
   "matched": 48213,
   "returned": 200,
   "truncated": true,
+  "delivery": "file",
   "rows": [ "... インライン時のみ ..." ],
   "result_file": "<workspace>/work/out/q3.jsonl",
   "result_bytes": 48231904,
@@ -43,6 +45,8 @@ pcap 固有の事情として、**行数では出力サイズを制御できな�
 ```
 
 エージェントに分岐を書かせないため、共通フィールドは常に同じ位置・同じ意味を持つ。
+
+**`delivery`（`"inline"` / `"file"`）は Track E の実装中に追加した。** 当初は「`rows` があればインライン、`result_file` があればファイル」とキーの有無で判別する設計だったが、実装してみると **0 件のインライン結果で `rows` が空配列になり、`omitempty` で消えてファイル出力と区別が付かなくなる**ことが判明した。`rows` をポインタにして空配列を保持したうえで、判別を推測に頼らせないよう明示フィールドを設けた。
 
 ### 3. `matched` を常に返す
 

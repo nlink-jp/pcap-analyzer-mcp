@@ -23,6 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Phase 1 Track D: `internal/workspace` — workspace creation and listing,
   `meta.json`, capinfos parsing, host-side SHA-256, path validation, and
   `podman.RunOnce`; plus integration tests that drive the real image
+- Phase 1 Track E: the read-only edition — `internal/tshark` (argv, field/CSV
+  parsing, protocol hierarchy, conversation aggregation, error classification),
+  `internal/output` (the ADR-0005 contract), `internal/tools` (nine tools), and
+  a wired-up `serve`
 
 ### Changed
 
@@ -33,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The capture is bind-mounted as a single file at the fixed container path
   `/evidence/capture`, not as its parent directory (ADR-0004 amended). Siblings
   are no longer exposed, and the host filename never reaches an argv
+- Results carry an explicit `delivery` field ("inline" or "file") instead of
+  leaving the agent to infer the channel from which keys are present
+  (ADR-0005 amended)
 - Docs corrected against the built image: `--export-objects` supports six
   protocols (not four), `capinfos` metadata is read via `-T -m -Q`
   (not `-M`), truncation must be judged from the inferred snaplen as well as

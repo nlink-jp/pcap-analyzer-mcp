@@ -11,10 +11,10 @@ runs a **version-pinned tshark inside a container**, mounts the capture
 workspace as JSONL — so an agent can narrow down a GB-scale capture step by
 step instead of drowning in its first response.
 
-> **Status: pre-release.** Design is complete (RFP + ADR-0001–0007 +
-> architecture in [`docs/`](docs/)) and the repository is scaffolded, but the
-> tools are not implemented yet. `serve`, `build-runtime` and `doctor` report
-> which development track will implement them.
+> **Status: pre-release, read-only edition working.** Nine tools are
+> implemented and driven end to end against a real container: open a capture,
+> inspect it, list conversations, and query packets. `follow_stream` and
+> `extract_objects` are not built yet, and neither is async job support.
 
 ## Why a container
 

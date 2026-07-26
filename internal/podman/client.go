@@ -179,19 +179,8 @@ type RunOnceOpts struct {
 	DropAllCaps bool
 }
 
-// Result is the outcome of a single container run.
-type Result struct {
-	Stdout   []byte
-	Stderr   []byte
-	ExitCode int
-}
-
-// RunOnce starts a container, waits for it, and removes it.
-//
-// A non-zero ExitCode is not an error: tshark uses exit codes to report things
-// the caller has to interpret (a bad display filter, an unreadable capture).
-// A returned error means podman itself failed.
-func (c *Client) RunOnce(ctx context.Context, opts RunOnceOpts) (*Result, error) {
+// runArgs builds everything up to (but not including) the container command.
+func runArgs(opts RunOnceOpts) []string {
 	args := []string{"run", "--rm"}
 	if opts.Network != "" {
 		args = append(args, "--network", opts.Network)
@@ -211,14 +200,103 @@ func (c *Client) RunOnce(ctx context.Context, opts RunOnceOpts) (*Result, error)
 	for _, m := range opts.Mounts {
 		args = append(args, "-v", m.spec())
 	}
-	args = append(args, opts.Image)
-	args = append(args, opts.Cmd...)
+	return append(args, opts.Image)
+}
+
+// Result is the outcome of a single container run.
+type Result struct {
+	Stdout   []byte
+	Stderr   []byte
+	ExitCode int
+}
+
+// RunOnce starts a container, waits for it, and removes it.
+//
+// A non-zero ExitCode is not an error: tshark uses exit codes to report things
+// the caller has to interpret (a bad display filter, an unreadable capture).
+// A returned error means podman itself failed.
+func (c *Client) RunOnce(ctx context.Context, opts RunOnceOpts) (*Result, error) {
+	args := append(runArgs(opts), opts.Cmd...)
 
 	stdout, stderr, code, err := c.runner.Run(ctx, c.binary, args...)
 	if err != nil && code == -1 {
 		return nil, &ErrNotInstalled{Err: err}
 	}
 	return &Result{Stdout: stdout, Stderr: stderr, ExitCode: code}, nil
+}
+
+// StreamResult reports how a streamed run ended.
+type StreamResult struct {
+	ExitCode int
+	Stderr   []byte
+	// Stopped is true when the consumer finished before the container did and
+	// the container was killed on purpose. ExitCode is meaningless then: the
+	// process died because we stopped reading, not because it failed.
+	Stopped bool
+}
+
+// RunOnceStream runs a container and hands its stdout to consume as a stream.
+//
+// RunOnce buffers stdout, which is fine for a version string or a capinfos
+// record but not for a full-capture export. Streaming also lets the consumer
+// stop early — a row limit should not mean draining a stream that will be
+// discarded — which is why the container is killed once consume returns.
+func (c *Client) RunOnceStream(
+	ctx context.Context,
+	opts RunOnceOpts,
+	consume func(io.Reader) error,
+) (*StreamResult, error) {
+	runCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	pr, pw := io.Pipe()
+	var errBuf bytes.Buffer
+
+	type outcome struct {
+		code int
+		err  error
+	}
+	done := make(chan outcome, 1)
+
+	go func() {
+		code, runErr := c.runStreaming(runCtx, pw, &errBuf, opts)
+		// Closing the write end is what lets consume see EOF.
+		_ = pw.CloseWithError(io.EOF)
+		done <- outcome{code: code, err: runErr}
+	}()
+
+	consumeErr := consume(pr)
+
+	// Whether the container finished on its own decides how to read what
+	// follows: if it did not, we are about to kill it and its exit status is
+	// our doing.
+	var res outcome
+	stopped := false
+	select {
+	case res = <-done:
+	default:
+		stopped = true
+		// Unblock the writer, then stop the container. Without both, cmd.Wait
+		// deadlocks: the copy goroutine stops and the child blocks on a full
+		// pipe.
+		_ = pr.CloseWithError(io.ErrClosedPipe)
+		cancel()
+		res = <-done
+	}
+
+	out := &StreamResult{ExitCode: res.code, Stderr: errBuf.Bytes(), Stopped: stopped}
+	if consumeErr != nil {
+		return out, consumeErr
+	}
+	if !stopped && res.err != nil && res.code == -1 {
+		return out, &ErrNotInstalled{Err: res.err}
+	}
+	return out, nil
+}
+
+func (c *Client) runStreaming(ctx context.Context, stdout, stderr io.Writer, opts RunOnceOpts) (int, error) {
+	args := append(runArgs(opts), opts.Cmd...)
+	return c.runner.RunStreaming(ctx, stdout, stderr, c.binary, args...)
 }
 
 // CanMount reports whether hostPath can be bind-mounted into a container.

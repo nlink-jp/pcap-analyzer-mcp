@@ -1,9 +1,15 @@
 package cmd
 
 import (
-	"errors"
+	"log/slog"
+	"os"
 
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/config"
+	"github.com/nlink-jp/pcap-analyzer-mcp/internal/mcpserver"
+	"github.com/nlink-jp/pcap-analyzer-mcp/internal/podman"
+	"github.com/nlink-jp/pcap-analyzer-mcp/internal/tools"
+	"github.com/nlink-jp/pcap-analyzer-mcp/internal/transport"
+	"github.com/nlink-jp/pcap-analyzer-mcp/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -19,11 +25,39 @@ Transport is stdio only; HTTP/SSE is out of scope (architecture.md §8).`,
 		if err != nil {
 			return err
 		}
-		_ = cfg
-		// Track B wires internal/transport + internal/mcpserver here;
-		// Track E onward registers the tool handlers.
-		return errors.New("serve: not implemented yet (Phase 1 Track B)")
+
+		// stdout is the protocol channel, so diagnostics go to stderr. Anything
+		// printed to stdout by accident corrupts the JSON-RPC stream.
+		logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
+			Level: logLevel(cfg.Log.Level),
+		}))
+
+		pc := podman.New()
+		srv := mcpserver.New("pcap-analyzer-mcp", Version,
+			transport.NewStdioTransport(os.Stdin, os.Stdout), logger)
+
+		tools.Register(srv, &tools.Deps{
+			Cfg:       cfg,
+			Podman:    pc,
+			Workspace: workspace.NewManager(cfg, pc),
+		})
+
+		logger.Info("serving", "version", Version, "image", cfg.Container.Image)
+		return srv.Serve(cmd.Context())
 	},
+}
+
+func logLevel(name string) slog.Level {
+	switch name {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
 func init() {
