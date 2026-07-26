@@ -301,8 +301,8 @@ query_packets(filter: "tcp.analysis.flags",
 | `dcerpc.opnum` が数字のまま名前にならない | BIND がキャプチャに含まれていない。opnum から操作名を断定しない |
 | 結果が大きすぎて扱えない | `fields` を減らす。フィルタを強める。`limit: 0` でファイルに落とす |
 | `invalid_arguments` | `details.invalid_fields` を見る |
-| `extract_objects` が `operation not permitted` | ホストの AV。[実地ノート](field-notes.ja.md) |
-| `ftp-data` で `.exe` が取れない | tshark の制約。制御チャネルのクエリで代替 |
+| `skipped` に `operation not permitted` が入る | ホストの AV が隔離した。呼び出し自体は成功で、他のオブジェクトは返る。[実地ノート](field-notes.ja.md) |
+| `ftp-data` で `.exe` が取れない | tshark の制約。`skipped` が空なら AV ではなく dissector が生成していない証拠。制御チャネルのクエリで代替 |
 | `payload_unavailable_truncated_capture` | snaplen が小さくペイロードが記録されていない |
 | 呼び出しが返らない | `async: true` を使う |
 

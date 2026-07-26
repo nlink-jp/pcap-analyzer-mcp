@@ -311,8 +311,8 @@ Extracted values feed straight into the rest of the series.
 | `dcerpc.opnum` stays a number and never resolves | The BIND is not in the capture. Do not assert an operation name from the opnum |
 | The result is too large to work with | Trim `fields`, tighten the filter, or use `limit: 0` to write a file |
 | `invalid_arguments` | Read `details.invalid_fields` |
-| `extract_objects` says `operation not permitted` | The host's AV. See [field notes](field-notes.md) |
-| No `.exe` from `ftp-data` | A tshark limitation. Use the control-channel query instead |
+| `operation not permitted` appears in `skipped` | The host's AV quarantined it. The call still succeeded and the other objects came back. See [field notes](field-notes.md) |
+| No `.exe` from `ftp-data` | A tshark limitation. An empty `skipped` proves the dissector never wrote them, so it is not the AV. Use the control-channel query instead |
 | `payload_unavailable_truncated_capture` | Small snaplen; the payload was never recorded |
 | A call never returns | Use `async: true` |
 
