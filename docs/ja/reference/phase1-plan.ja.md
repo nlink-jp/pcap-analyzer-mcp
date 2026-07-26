@@ -77,12 +77,18 @@ data-toolbox-mcp から移植（`feedback_data_toolbox_mcp_skeleton`）。
 
 ### Track H: テストハーネス + フィクスチャ
 
-- gopacket による合成 pcap 生成スクリプト（`testdata/gen/`）と生成物の commit
-  - 基本 TCP/UDP/DNS フロー
-  - HTTP フロー（`extract_objects` 用、良性のダミーファイル）
-  - 切り詰めキャプチャ（`snaplen` 小）
-  - pcapng（SHB/ISB オプション付き）
-- ダミー MCP クライアント E2E ハーネス（`e2e/`、`-tags e2e`）
+- 合成 pcap 生成スクリプト（`samples/generate.sh`）と生成物 4 件の commit
+  - `web-session.pcapng` — 素の HTTP 往復
+  - `suspicious-download.pcapng` — 本文がインジェクションを試みる HTTP 応答
+  - `mixed.pcapng` — 上記 2 本を結合、会話が 2 つ
+  - `truncated.pcapng` — `editcap -s 40` で切り詰め
+- ダミー MCP クライアント E2E ハーネス（`e2e/`、`-tags e2e`）+ 11 ステージのシナリオ
+- `samples/README.md` に同じ 11 ステージを人間向け graded ウォークスルーとして記載
+
+**gopacket は使わなかった。** 計画では gopacket で生成する想定だったが、解析
+イメージに既に Wireshark 一式が入っており、`text2pcap` / `mergecap` / `editcap`
+で生成できる。Go の依存を増やさず、しかも**読み戻すのと同じ tshark ビルドで
+生成する**ことになるため、こちらを採った。
 
 ## 3. Dependencies between tracks
 

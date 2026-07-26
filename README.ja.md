@@ -128,6 +128,8 @@ DuckDB がそのまま読み込めます。パケットテーブルに SQL を�
 - [RFP](docs/ja/pcap-analyzer-mcp-rfp.ja.md) — 問題定義・スコープ・計画
 - [アーキテクチャ](docs/ja/reference/architecture.ja.md) — 信頼境界・データフロー・セキュリティモデル
 - [ADR](docs/ja/adr/) — 各設計判断とその代償
+- [クライアント設定](docs/ja/reference/client-setup.ja.md) — サーバー登録とトラブルシューティング
+- [サンプルキャプチャ](samples/README.md) — 合成キャプチャ 4 件と graded ウォークスルー
 - [Phase 1 計画](docs/ja/reference/phase1-plan.ja.md) — トラックと未解決事項
 
 ## ライセンス

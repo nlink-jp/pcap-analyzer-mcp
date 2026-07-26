@@ -35,6 +35,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   errors and formatting; framing emitted ahead of the content), object defang
   to `<sha256>.bin` at mode 0600, and ranged reads windowed per direction
 
+### Added (Phase 2)
+
+- `samples/` — four synthetic captures, a generator that builds them with the
+  analysis image's own Wireshark tools, and an eleven-stage graded walkthrough
+- `e2e/` — a dummy MCP client that drives the built binary over stdio through
+  those same eleven stages against real podman
+- `internal/logging` — `[log] file` is now honoured, rotating five generations
+  on startup and written 0600. It was configurable but ignored before
+- `docs/{en,ja}/reference/client-setup.md`
+
 ### Security
 
 Findings from an independent review of the whole tree.

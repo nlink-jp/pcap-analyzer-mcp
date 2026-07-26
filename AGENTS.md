@@ -10,16 +10,18 @@ network-less container; the capture is mounted **read-only and never copied**.
 Results come back inline when small and as JSONL files in the workspace when
 large.
 
-**Status: Phase 1 complete (Tracks A–G).** All twelve tools are implemented and
-driven end to end against real podman, payload extraction included. What
-remains before a release is the Track G security review and Phase 2 (real-client
-validation, samples, client-setup docs).
+**Status: Phase 1 complete, Phase 2 under way.** All twelve tools work, an
+independent security review has been through the tree and its findings are
+fixed, and an eleven-stage E2E suite drives the real binary against real
+podman. What remains is validation from an actual MCP client.
 
 ## Build / test
 
 - `make build` — never `go build` directly (writes to `dist/`, injects the version)
 - `make test` — all Go unit tests
 - `go test -tags integration ./internal/workspace/` — drives real podman and the analysis image (needs `make runtime-image` first)
+- `go test -tags e2e ./e2e/` — drives the built binary over stdio as an MCP client would; the same eleven stages as `samples/README.md`
+- `./samples/generate.sh` — regenerate the sample captures
 - `make runtime-image` — builds the tshark container image (wraps `pcap-analyzer-mcp build-runtime`)
 - `make build-all` — cross-compile darwin/arm64 + linux/{amd64,arm64} + windows/amd64
 - `make help` — list targets
@@ -46,8 +48,9 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 | `internal/job/` | Async jobs + `check_job`, with a concurrency cap | F ✅ |
 | `internal/payload/` | Untrusted (self-redacting), nonce framing, object defang | G ✅ |
 | `internal/tools/` | All twelve tool handlers | E ✅, G ✅ |
-| `testdata/gen/` | gopacket fixture generators (synthetic captures only) | H |
-| `e2e/` | Dummy MCP client harness (build tag `e2e`) | H |
+| `samples/` | Synthetic captures + `generate.sh` + the graded walkthrough | H ✅ |
+| `e2e/` | Dummy MCP client + eleven scenario stages (build tag `e2e`) | H ✅ |
+| `internal/logging/` | Log file with startup rotation; payload never reaches it | Phase 2 ✅ |
 | `docs/{en,ja}/` | RFP, ADR-0001–0007, architecture, phase1-plan | Phase 0/1 ✅ |
 
 ## ADR cheat sheet

@@ -134,6 +134,8 @@ Configuration is optional; every value has a working default. See
 - [RFP](docs/en/pcap-analyzer-mcp-rfp.md) — problem statement, scope, plan
 - [Architecture](docs/en/reference/architecture.md) — trust boundaries, data flow, security model
 - [ADRs](docs/en/adr/) — every design decision and its cost
+- [Client setup](docs/en/reference/client-setup.md) — registering the server, and what to do when it misbehaves
+- [Sample captures](samples/README.md) — four synthetic captures and a graded walkthrough
 - [Phase 1 plan](docs/en/reference/phase1-plan.md) — tracks and open questions
 
 ## License
