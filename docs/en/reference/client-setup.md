@@ -100,7 +100,7 @@ covers every tool in eleven stages and says what each should produce.
 | `analysis image ... not built` | `make runtime-image` |
 | A capture cannot be mounted | It is outside the VM's shared paths. Copy it under `/Users` or `/private/tmp`; `doctor` will confirm |
 | A capture takes minutes and the client times out | Pass `async: true` and poll `check_job`. `describe_workspace` reports `packet_count` and `file_size`, which is what to decide on |
-| `payload_unavailable_truncated_capture` | The capture was recorded with a small snaplen, so the payload bytes were never written. `query_packets`, `list_conversations` and `protocol_hierarchy` still work |
+| `payload_unavailable_truncated_capture` | The capture was recorded with a small snaplen, so the payload bytes were never written. `query_packets` and `protocol_hierarchy` still work. `list_conversations` will find nothing if the snaplen also cut the transport header, since that is where the stream index lives — it says so rather than returning a bare empty list |
 | `job_not_found` | The server restarted. Jobs live in memory; re-run the tool |
 | A rebuild seems to have no effect | The client started the server process at registration time and still holds it. `make build` replaces the file on disk but not the running process — restart the MCP server (or the client) to pick it up |
 | Results feel truncated | Compare `matched` with `returned`. If `matched` is much larger, narrow the filter rather than raising `limit` |

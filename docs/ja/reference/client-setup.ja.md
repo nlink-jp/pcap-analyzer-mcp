@@ -97,7 +97,7 @@ samples/mixed.pcapng を ~/pcap-workspaces の下にワークスペースとし�
 | `analysis image ... not built` | `make runtime-image` |
 | キャプチャをマウントできない | VM の共有パス外にある。`/Users` や `/private/tmp` 配下へコピーし、`doctor` で確認 |
 | 分単位かかりクライアントがタイムアウト | `async: true` を付けて `check_job` でポーリング。判断材料は `describe_workspace` の `packet_count` / `file_size` |
-| `payload_unavailable_truncated_capture` | 小さい snaplen で取得されたキャプチャで、ペイロードが記録されていない。`query_packets` / `list_conversations` / `protocol_hierarchy` は使える |
+| `payload_unavailable_truncated_capture` | 小さい snaplen で取得されたキャプチャで、ペイロードが記録されていない。`query_packets` と `protocol_hierarchy` は使える。`list_conversations` は snaplen が transport ヘッダまで削っていると 0 件になる（ストリーム番号がそこにあるため）— 素の空リストではなく理由を返す |
 | `job_not_found` | サーバーが再起動した。ジョブはインメモリなので、元のツールを再実行すればよい |
 | 再ビルドしても反映されない | クライアントは登録時に起動したプロセスを保持し続ける。`make build` はディスク上のファイルを置き換えるだけで走行中のプロセスは変わらない。MCP サーバー（またはクライアント）を再起動する |
 | 結果が足りない気がする | `matched` と `returned` を比べる。`matched` のほうが遥かに大きいなら、`limit` を上げるのではなく**フィルタを強める** |
