@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-07-26
+
+### Fixed
+
+- **A single unreadable object no longer sinks `extract_objects`.** Over-size
+  objects were already recorded in `skipped` and the extraction carried on, but
+  an object that could not be read aborted the call. On a host with antivirus
+  running that is the normal case, not the edge case: the AV quarantines a
+  sample mid-write, and a capture where 2 of 3 objects were detected returned
+  nothing at all — not even the benign one. Unreadable objects are now skipped
+  with a reason naming the likely cause, and the recoverable ones come back.
+  Reported in the field notes contributed by @magifd2
+
+### Changed
+
+- `get_usage` now describes the `extract_objects` manifest, including what a
+  populated `skipped` list means. An empty `objects` with entries in `skipped`
+  is a successful call, and worth reading as a finding
+
 ## [0.1.1] - 2026-07-26
 
 ### Fixed

@@ -134,6 +134,8 @@ Configuration is optional; every value has a working default. See
 - [Architecture](docs/en/reference/architecture.md) — trust boundaries, data flow, security model
 - [ADRs](docs/en/adr/) — every design decision and its cost
 - [Client setup](docs/en/reference/client-setup.md) — registering the server, and what to do when it misbehaves
+- [Tips](docs/en/reference/tips.md) — how to actually run an investigation: the shape of one, per-protocol filter recipes, and common snags
+- [Field notes](docs/en/reference/field-notes.md) — analysing captures that carry real malware: antivirus interference, the risk of AV exclusions, and the `ftp-data` limitation
 - [Sample captures](samples/README.md) — four synthetic captures and a graded walkthrough
 - [Phase 1 plan](docs/en/reference/phase1-plan.md) — tracks and open questions
 

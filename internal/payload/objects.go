@@ -3,8 +3,10 @@ package payload
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -134,16 +136,35 @@ func Defang(protocol, rawDir, storeDir string, lim Limits) (*Manifest, error) {
 		}
 		total += info.Size()
 
+		// A single unreadable object must not sink the extraction. Measured
+		// against real malware: the host's antivirus quarantines a sample
+		// mid-write, the read fails with EPERM, and aborting here threw away
+		// the benign objects alongside it — 2 of 3 detected meant 0 returned.
+		// Skipping keeps what is recoverable, and the skip list is itself
+		// evidence that something on the wire was real enough to be caught.
 		sum, err := sha256File(src)
 		if err != nil {
-			return nil, err
+			m.Skipped = append(m.Skipped, SkippedObject{
+				SourceName: e.Name(), Bytes: info.Size(), Reason: unreadableReason(err),
+			})
+			continue
 		}
 		dst := filepath.Join(storeDir, sum+".bin")
 		if err := moveFile(src, dst); err != nil {
-			return nil, err
+			m.Skipped = append(m.Skipped, SkippedObject{
+				SourceName: e.Name(), Bytes: info.Size(), Reason: unreadableReason(err),
+			})
+			continue
 		}
 		if err := os.Chmod(dst, 0o600); err != nil {
-			return nil, fmt.Errorf("restrict object permissions: %w", err)
+			// The bytes are stored but not locked down; removing is safer than
+			// leaving a world-readable copy of a possible sample.
+			_ = os.Remove(dst)
+			m.Skipped = append(m.Skipped, SkippedObject{
+				SourceName: e.Name(), Bytes: info.Size(),
+				Reason: fmt.Sprintf("could not restrict permissions, so it was discarded: %v", err),
+			})
+			continue
 		}
 
 		m.Objects = append(m.Objects, Object{
@@ -158,6 +179,16 @@ func Defang(protocol, rawDir, storeDir string, lim Limits) (*Manifest, error) {
 	m.Objects = dedupeBySHA(m.Objects)
 	sort.Slice(m.Objects, func(i, j int) bool { return m.Objects[i].SHA256 < m.Objects[j].SHA256 })
 	return m, nil
+}
+
+// unreadableReason explains a per-object I/O failure, naming the most likely
+// cause rather than leaving the caller with a bare errno.
+func unreadableReason(err error) string {
+	if errors.Is(err, fs.ErrPermission) {
+		return fmt.Sprintf("could not be read (%v) — on a host running antivirus this is "+
+			"normally the sample being quarantined mid-write, which is a true positive", err)
+	}
+	return fmt.Sprintf("could not be read: %v", err)
 }
 
 func dedupeBySHA(in []Object) []Object {

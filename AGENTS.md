@@ -51,7 +51,7 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 | `samples/` | Synthetic captures + `generate.sh` + the graded walkthrough | H ✅ |
 | `e2e/` | Dummy MCP client + eleven scenario stages (build tag `e2e`) | H ✅ |
 | `internal/logging/` | Log file with startup rotation; payload never reaches it | Phase 2 ✅ |
-| `docs/{en,ja}/` | RFP, ADR-0001–0007, architecture, phase1-plan | Phase 0/1 ✅ |
+| `docs/{en,ja}/` | RFP, ADR-0001–0007, architecture, phase1-plan, tips, field-notes | Phase 0/1 ✅ |
 
 ## ADR cheat sheet
 
@@ -93,6 +93,8 @@ no container. Expect it to be the most-called tool.
 - **Every container run needs a timeout.** `RunOnceOpts.Timeout` is populated from config in `runOpts`; a run without one can hang the server, because requests are handled in order.
 - **The server handles requests serially.** A synchronous whole-capture call blocks everything else including `check_job` — which is why heavy tools offer `async`, and why the timeout matters.
 - **stdout is the protocol channel.** All logging goes to stderr; a stray `fmt.Println` corrupts the JSON-RPC stream.
+- **`operation not permitted` in an `extract_objects` skip reason is the host's antivirus**, not us — it quarantines the sample mid-write. Per-object failures are skipped and recorded, never fatal (this was a real defect through v0.1.1: one quarantined object threw away the benign ones too). Defang covers accidental execution and filename-borne attacks, **not** detection: AV matches content, and that detection is a true positive, so suppressing it would be evasion. Recovering the quarantined bytes needs an AV exclusion on the workspace, which **removes protection and leaves live malware unquarantined** — see `docs/{en,ja}/reference/field-notes*.md` before recommending it.
+- **`ftp-data` never exports binary `RETR` transfers** — confirmed against tshark 4.0.17, and the Wireshark GUI does the same. Only ASCII-mode transfers come out. Recover names/sizes from `ftp.request.command` / `SIZE` responses, and the bytes via `follow_stream`.
 
 ## Conventions (organization-wide)
 

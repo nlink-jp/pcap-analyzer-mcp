@@ -86,7 +86,7 @@ samples/mixed.pcapng を ~/pcap-workspaces の下にワークスペースとし�
 どんなプロトコルが流れているか教えて。
 ```
 
-[`samples/README.md`](../../../samples/README.md) に 11 段階の graded
+[`samples/README.md`][samples] に 11 段階の graded
 ウォークスルーがあり、各段階で何が返るべきかまで書いてあります。
 
 ## トラブルシューティング
@@ -98,6 +98,8 @@ samples/mixed.pcapng を ~/pcap-workspaces の下にワークスペースとし�
 | キャプチャをマウントできない | VM の共有パス外にある。`/Users` や `/private/tmp` 配下へコピーし、`doctor` で確認 |
 | 分単位かかりクライアントがタイムアウト | `async: true` を付けて `check_job` でポーリング。判断材料は `describe_workspace` の `packet_count` / `file_size` |
 | `payload_unavailable_truncated_capture` | 小さい snaplen で取得されたキャプチャで、ペイロードが記録されていない。`query_packets` と `protocol_hierarchy` は使える。`list_conversations` は snaplen が transport ヘッダまで削っていると 0 件になる（ストリーム番号がそこにあるため）— 素の空リストではなく理由を返す |
+| `extract_objects` の応答で一部が `operation not permitted` を理由に `skipped` に入る | ホストの AV が抽出中のマルウェアを掴んで隔離した。ツールの不具合ではなく、他のオブジェクトは通常どおり返る。隔離されたこと自体が所見でもある。[実地ノート](field-notes.ja.md)を参照 — 除外設定で現物は回収できるが**保護を外す操作であり危険を伴う** |
+| `ftp-data` の抽出で `.exe` が 1 件も取れない | tshark の ftp-data ディセクタがバイナリ `RETR` を書き出さない。AV とは無関係。`ftp.request.command` のクエリでファイル名・サイズは取れる。[実地ノート](field-notes.ja.md)を参照 |
 | `job_not_found` | サーバーが再起動した。ジョブはインメモリなので、元のツールを再実行すればよい |
 | 再ビルドしても反映されない | クライアントは登録時に起動したプロセスを保持し続ける。`make build` はディスク上のファイルを置き換えるだけで走行中のプロセスは変わらない。MCP サーバー（またはクライアント）を再起動する |
 | 結果が足りない気がする | `matched` と `returned` を比べる。`matched` のほうが遥かに大きいなら、`limit` を上げるのではなく**フィルタを強める** |
@@ -131,5 +133,10 @@ stdout には絶対にログを出さないでください。そこは JSON-RPC 
 
 ## 関連
 
+- [実践 Tips](tips.ja.md) — 調査の型、プロトコル別フィルタレシピ、結果の読み方
+- [実地ノート](field-notes.ja.md) — 実マルウェアを扱うときの AV の挙動、除外設定の危険、ftp-data の制約
+- [サンプルキャプチャ][samples] — 合成キャプチャでの 11 段階ウォークスルー
 - [アーキテクチャ](architecture.ja.md) — 信頼境界・データフロー・セキュリティモデル
 - [ADR](../adr/) — 各設計判断とその代償
+
+[samples]: ../../../samples/README.md
