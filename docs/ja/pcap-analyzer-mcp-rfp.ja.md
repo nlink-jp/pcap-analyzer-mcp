@@ -236,7 +236,7 @@ digest で pin したイメージを使い、**使用したイメージ ID と t
 
 ### Phase 3: Release
 
-LICENSE (MIT) / README.md / README.ja.md / AGENTS.md / CHANGELOG.md 整備 → 署名 + notarize → 5 platform zip（darwin amd64/arm64 + linux amd64/arm64 + windows amd64）→ `gh release create` → cybersecurity-series submodule 追加 → org profile README 追記 → `check-org.sh` 全緑。
+LICENSE (MIT) / README.md / README.ja.md / AGENTS.md / CHANGELOG.md 整備 → 署名 + notarize → 4 platform アーカイブ（darwin arm64 zip + linux amd64/arm64 tar.gz + windows amd64 zip）→ `gh release create` → cybersecurity-series submodule 追加 → org profile README 追記 → `check-org.sh` 全緑。
 
 ### 独立にレビューできる区切り
 

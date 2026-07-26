@@ -10,9 +10,9 @@ network-less container; the capture is mounted **read-only and never copied**.
 Results come back inline when small and as JSONL files in the workspace when
 large.
 
-**Status: Phase 2 (Scaffolding) complete. No business logic yet** — `serve`,
-`build-runtime`, and `doctor` are skeletons that report which Phase 1 track
-will implement them.
+**Status: Phase 1 Track B complete.** The MCP protocol layer works and is
+tested; no tools are registered yet, so `serve` still reports the track that
+will wire it up, as do `build-runtime` and `doctor`.
 
 ## Build / test
 
@@ -33,10 +33,10 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 | `cmd/` | cobra subcommands (root / serve / build-runtime / doctor / version) | A ✅ |
 | `internal/config/` | config.toml loading, single `Validate()` path | A ✅ |
 | `runtime/Dockerfile` | Source for the tshark image, embedded via `go:embed` | C |
-| `internal/transport/` | MCP stdio JSON-RPC framing | B |
-| `internal/jsonrpc/` | JSON-RPC 2.0 types | B |
-| `internal/mcpserver/` | MCP protocol (initialize, tools/list, tools/call) | B |
-| `internal/toolerr/` | Structured `{code, message, details}` tool errors | B |
+| `internal/transport/` | MCP stdio JSON-RPC framing | B ✅ |
+| `internal/jsonrpc/` | JSON-RPC 2.0 types | B ✅ |
+| `internal/mcpserver/` | MCP protocol (initialize, tools/list, tools/call) | B ✅ |
+| `internal/toolerr/` | Structured `{code, message, details}` tool errors | B ✅ |
 | `internal/workspace/` | Workspace creation, `meta.json`, per-call `podman run` | D |
 | `internal/tshark/` | tshark argument assembly and output parsing | E |
 | `internal/output/` | The output contract: byte threshold, `matched`, `sample`, JSONL | E |

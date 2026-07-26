@@ -236,7 +236,7 @@ Plus `architecture.md` and `phase1-plan.md`, in both docs/ja and docs/en.
 
 ### Phase 3: Release
 
-LICENSE (MIT) / README.md / README.ja.md / AGENTS.md / CHANGELOG.md → signing + notarization → 5-platform zips (darwin amd64/arm64 + linux amd64/arm64 + windows amd64) → `gh release create` → add as a cybersecurity-series submodule → update the org profile README → `check-org.sh` all green.
+LICENSE (MIT) / README.md / README.ja.md / AGENTS.md / CHANGELOG.md → signing + notarization → 4-platform archives (darwin arm64 zip + linux amd64/arm64 tar.gz + windows amd64 zip) → `gh release create` → add as a cybersecurity-series submodule → update the org profile README → `check-org.sh` all green.
 
 ### Independently reviewable checkpoints
 
