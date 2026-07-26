@@ -84,7 +84,8 @@ func usageDoc(inlineMaxBytes, defaultRowLimit int) map[string]any {
 			"matched": "The number of packets the filter selected, always reported. Compare it " +
 				"with `returned`: if matched is far larger, narrow the filter rather than " +
 				"raising the limit. matched == 0 means the filter genuinely found nothing.",
-			"file_results": "Large results are written to the workspace as JSONL and `sample` " +
+			"file_results": "Large results are written to the workspace — JSONL by default, " +
+				"CSV if you ask for it via format — and `sample` " +
 				"carries the leading rows, so you never need a second call just to see the " +
 				"shape. Read the file in pieces, or hand it to a SQL tool — it is not meant " +
 				"to be read whole.",

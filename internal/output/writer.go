@@ -37,7 +37,9 @@ type Result struct {
 	Untrusted string `json:"untrusted,omitempty"`
 
 	WorkspaceID string `json:"workspace_id"`
-	Filter      string `json:"filter,omitempty"`
+	// Filter is echoed even when empty: the contract promises the same keys
+	// every time, and a key that disappears is a shape change like any other.
+	Filter string `json:"filter"`
 
 	// Matched is how many packets the filter selected, independent of how many
 	// rows were returned. Without it an agent cannot tell a filter that
