@@ -10,6 +10,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"time"
@@ -27,6 +28,15 @@ const (
 
 // maxFinishedJobs bounds the finished-job history kept in memory.
 const maxFinishedJobs = 32
+
+// maxLiveJobs bounds jobs that are queued or running. Eviction only reclaims
+// finished ones, so without this a client could submit indefinitely and grow
+// the table and its goroutines without limit.
+const maxLiveJobs = 64
+
+// ErrTooManyJobs reports that the live-job ceiling was reached.
+var ErrTooManyJobs = toolerr.Newf(toolerr.CodeAnalysisFailed,
+	"too many analyses are already queued or running (limit %d); wait for one to finish", maxLiveJobs)
 
 // Progress is a coarse view of how far an analysis has advanced.
 //
@@ -95,7 +105,7 @@ func NewManager(maxConcurrent int) *Manager {
 // ctx must be the server-lifetime context, not the request context: the
 // request's context is cancelled the moment the job id is returned, which
 // would kill the work before it began (ADR-0006).
-func (m *Manager) Submit(ctx context.Context, tool string, run RunFunc) string {
+func (m *Manager) Submit(ctx context.Context, tool string, run RunFunc) (string, error) {
 	id := "job_" + randomHex(8)
 	js := &jobState{
 		id:        id,
@@ -106,6 +116,10 @@ func (m *Manager) Submit(ctx context.Context, tool string, run RunFunc) string {
 	}
 
 	m.mu.Lock()
+	if m.liveLocked() >= maxLiveJobs {
+		m.mu.Unlock()
+		return "", ErrTooManyJobs
+	}
 	m.jobs[id] = js
 	m.evictLocked()
 	m.mu.Unlock()
@@ -122,10 +136,38 @@ func (m *Manager) Submit(ctx context.Context, tool string, run RunFunc) string {
 		defer func() { <-m.slots }()
 
 		js.begin()
-		res, err := run(ctx, js.report)
+		res, err := runGuarded(ctx, run, js.report)
 		js.finish(res, err)
 	}()
-	return id
+	return id, nil
+}
+
+// liveLocked counts jobs not yet finished. Caller holds m.mu.
+func (m *Manager) liveLocked() int {
+	n := 0
+	for _, js := range m.jobs {
+		js.mu.Lock()
+		if js.state == StateQueued || js.state == StateRunning {
+			n++
+		}
+		js.mu.Unlock()
+	}
+	return n
+}
+
+// runGuarded converts a panic into a failed job.
+//
+// Without this the panic happens on a bare goroutine, where Go terminates the
+// process unconditionally — taking the server and every other queued job with
+// it, for one bad capture.
+func runGuarded(ctx context.Context, run RunFunc, report func(Progress)) (res any, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = toolerr.Newf(toolerr.CodeInternalError,
+				"the server hit a bug running this job: %v\n%s", r, debug.Stack())
+		}
+	}()
+	return run(ctx, report)
 }
 
 func (js *jobState) begin() {

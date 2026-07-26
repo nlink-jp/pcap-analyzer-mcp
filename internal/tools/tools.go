@@ -93,6 +93,7 @@ func (d *Deps) runOpts(ws *workspace.Workspace, cmd []string) podman.RunOnceOpts
 		Memory:      d.Cfg.Container.Limits.Memory,
 		Userns:      workspace.DefaultUserns(),
 		DropAllCaps: true,
+		Timeout:     d.Cfg.Container.Limits.Timeout.Duration,
 	}
 }
 

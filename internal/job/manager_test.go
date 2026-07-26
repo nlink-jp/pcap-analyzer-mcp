@@ -12,6 +12,15 @@ import (
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/toolerr"
 )
 
+func mustSubmit(t *testing.T, m *Manager, ctx context.Context, tool string, run RunFunc) string {
+	t.Helper()
+	id, err := m.Submit(ctx, tool, run)
+	if err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	return id
+}
+
 func waitFor(t *testing.T, m *Manager, id string, want string) Status {
 	t.Helper()
 	deadline := time.Now().Add(3 * time.Second)
@@ -34,7 +43,7 @@ func TestSubmitReturnsImmediatelyAndCompletes(t *testing.T) {
 	m := NewManager(2)
 	release := make(chan struct{})
 
-	id := m.Submit(context.Background(), "query_packets",
+	id := mustSubmit(t, m, context.Background(), "query_packets",
 		func(context.Context, func(Progress)) (any, error) {
 			<-release
 			return map[string]string{"ok": "yes"}, nil
@@ -69,7 +78,7 @@ func TestSubmitReturnsImmediatelyAndCompletes(t *testing.T) {
 // branching works whether the tool ran synchronously or as a job.
 func TestFailedJobKeepsTheStructuredCode(t *testing.T) {
 	m := NewManager(1)
-	id := m.Submit(context.Background(), "query_packets",
+	id := mustSubmit(t, m, context.Background(), "query_packets",
 		func(context.Context, func(Progress)) (any, error) {
 			return nil, toolerr.New(toolerr.CodeInvalidDisplayFilter, "bad filter")
 		})
@@ -82,7 +91,7 @@ func TestFailedJobKeepsTheStructuredCode(t *testing.T) {
 
 func TestPlainErrorGetsTheFallbackCode(t *testing.T) {
 	m := NewManager(1)
-	id := m.Submit(context.Background(), "x",
+	id := mustSubmit(t, m, context.Background(), "x",
 		func(context.Context, func(Progress)) (any, error) {
 			return nil, errors.New("disk exploded")
 		})
@@ -98,7 +107,7 @@ func TestProgressIsVisibleWhileRunning(t *testing.T) {
 	reported := make(chan struct{})
 	release := make(chan struct{})
 
-	id := m.Submit(context.Background(), "x",
+	id := mustSubmit(t, m, context.Background(), "x",
 		func(_ context.Context, report func(Progress)) (any, error) {
 			report(Progress{Phase: "reading", Rows: 40000})
 			close(reported)
@@ -128,7 +137,7 @@ func TestConcurrencyIsCapped(t *testing.T) {
 
 	var ids []string
 	for i := 0; i < 6; i++ {
-		ids = append(ids, m.Submit(context.Background(), "x",
+		ids = append(ids, mustSubmit(t, m, context.Background(), "x",
 			func(context.Context, func(Progress)) (any, error) {
 				n := atomic.AddInt32(&running, 1)
 				mu.Lock()
@@ -163,14 +172,14 @@ func TestQueuedStateIsVisible(t *testing.T) {
 	m := NewManager(1)
 	release := make(chan struct{})
 
-	first := m.Submit(context.Background(), "x",
+	first := mustSubmit(t, m, context.Background(), "x",
 		func(context.Context, func(Progress)) (any, error) {
 			<-release
 			return nil, nil
 		})
 	waitFor(t, m, first, StateRunning)
 
-	second := m.Submit(context.Background(), "x",
+	second := mustSubmit(t, m, context.Background(), "x",
 		func(context.Context, func(Progress)) (any, error) { return nil, nil })
 
 	st, err := m.Get(second)
@@ -206,13 +215,13 @@ func TestShutdownBeforeStart(t *testing.T) {
 	defer close(blocker)
 
 	// Occupy the only slot.
-	m.Submit(context.Background(), "x", func(context.Context, func(Progress)) (any, error) {
+	mustSubmit(t, m, context.Background(), "x", func(context.Context, func(Progress)) (any, error) {
 		<-blocker
 		return nil, nil
 	})
 
 	ctx, cancel := context.WithCancel(context.Background())
-	id := m.Submit(ctx, "x", func(context.Context, func(Progress)) (any, error) {
+	id := mustSubmit(t, m, ctx, "x", func(context.Context, func(Progress)) (any, error) {
 		t.Error("this job should never have started")
 		return nil, nil
 	})
@@ -228,13 +237,13 @@ func TestFinishedJobsAreEvicted(t *testing.T) {
 	m := NewManager(4)
 	var ids []string
 	for i := 0; i < maxFinishedJobs+10; i++ {
-		id := m.Submit(context.Background(), "x",
+		id := mustSubmit(t, m, context.Background(), "x",
 			func(context.Context, func(Progress)) (any, error) { return nil, nil })
 		ids = append(ids, id)
 		waitFor(t, m, id, StateDone)
 	}
 	// Submitting one more triggers eviction of the oldest finished jobs.
-	last := m.Submit(context.Background(), "x",
+	last := mustSubmit(t, m, context.Background(), "x",
 		func(context.Context, func(Progress)) (any, error) { return nil, nil })
 	waitFor(t, m, last, StateDone)
 
@@ -248,7 +257,7 @@ func TestFinishedJobsAreEvicted(t *testing.T) {
 
 func TestTimestampsAreUTC(t *testing.T) {
 	m := NewManager(1)
-	id := m.Submit(context.Background(), "x",
+	id := mustSubmit(t, m, context.Background(), "x",
 		func(context.Context, func(Progress)) (any, error) { return nil, nil })
 	st := waitFor(t, m, id, StateDone)
 
@@ -256,5 +265,24 @@ func TestTimestampsAreUTC(t *testing.T) {
 		if !strings.HasSuffix(ts, "Z") {
 			t.Errorf("timestamp %q is not UTC", ts)
 		}
+	}
+}
+
+// Eviction only reclaims finished jobs, so without a live ceiling a client
+// could submit indefinitely and grow the table and its goroutines unbounded.
+func TestLiveJobsAreCapped(t *testing.T) {
+	m := NewManager(1)
+	release := make(chan struct{})
+	defer close(release)
+
+	for i := 0; i < maxLiveJobs; i++ {
+		if _, err := m.Submit(context.Background(), "x",
+			func(context.Context, func(Progress)) (any, error) { <-release; return nil, nil }); err != nil {
+			t.Fatalf("submit %d: %v", i, err)
+		}
+	}
+	if _, err := m.Submit(context.Background(), "x",
+		func(context.Context, func(Progress)) (any, error) { return nil, nil }); err == nil {
+		t.Error("submitting past the live-job ceiling must be refused")
 	}
 }

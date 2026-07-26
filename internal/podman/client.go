@@ -8,12 +8,14 @@ package podman
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // Runner executes an external command. Implementations must not interpret the
@@ -177,6 +179,28 @@ type RunOnceOpts struct {
 	// DropAllCaps adds --cap-drop=ALL. Analysis never needs a capability;
 	// leaving this false is only useful in tests.
 	DropAllCaps bool
+
+	// Timeout bounds the run in wall-clock time. Zero means no bound and is
+	// only for tests: the cgroup caps memory, but a dissector stuck in a
+	// pathological loop burns CPU indefinitely, and the stdio server handles
+	// requests in order.
+	Timeout time.Duration
+}
+
+// ErrTimeout reports that a run was killed for exceeding its deadline.
+type ErrTimeout struct{ After time.Duration }
+
+func (e *ErrTimeout) Error() string {
+	return "container run exceeded its " + e.After.String() + " timeout and was killed"
+}
+
+// withTimeout applies opts.Timeout, returning the context and whether a
+// deadline was set.
+func withTimeout(ctx context.Context, opts RunOnceOpts) (context.Context, context.CancelFunc) {
+	if opts.Timeout <= 0 {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, opts.Timeout)
 }
 
 // runArgs builds everything up to (but not including) the container command.
@@ -216,9 +240,15 @@ type Result struct {
 // the caller has to interpret (a bad display filter, an unreadable capture).
 // A returned error means podman itself failed.
 func (c *Client) RunOnce(ctx context.Context, opts RunOnceOpts) (*Result, error) {
+	runCtx, cancel := withTimeout(ctx, opts)
+	defer cancel()
+
 	args := append(runArgs(opts), opts.Cmd...)
 
-	stdout, stderr, code, err := c.runner.Run(ctx, c.binary, args...)
+	stdout, stderr, code, err := c.runner.Run(runCtx, c.binary, args...)
+	if errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+		return nil, &ErrTimeout{After: opts.Timeout}
+	}
 	if err != nil && code == -1 {
 		return nil, &ErrNotInstalled{Err: err}
 	}
@@ -246,7 +276,7 @@ func (c *Client) RunOnceStream(
 	opts RunOnceOpts,
 	consume func(io.Reader) error,
 ) (*StreamResult, error) {
-	runCtx, cancel := context.WithCancel(ctx)
+	runCtx, cancel := withTimeout(ctx, opts)
 	defer cancel()
 
 	pr, pw := io.Pipe()
@@ -285,6 +315,9 @@ func (c *Client) RunOnceStream(
 	}
 
 	out := &StreamResult{ExitCode: res.code, Stderr: errBuf.Bytes(), Stopped: stopped}
+	if !stopped && errors.Is(runCtx.Err(), context.DeadlineExceeded) {
+		return out, &ErrTimeout{After: opts.Timeout}
+	}
 	if consumeErr != nil {
 		return out, consumeErr
 	}

@@ -159,6 +159,7 @@ func (m *Manager) probe(ctx context.Context, pcapPath, workDir string) (CaptureI
 		Memory:      m.cfg.Container.Limits.Memory,
 		Userns:      DefaultUserns(),
 		DropAllCaps: true,
+		Timeout:     m.cfg.Container.Limits.Timeout.Duration,
 		Mounts: []podman.Mount{
 			{HostPath: pcapPath, ContainerPath: EvidenceMount, ReadOnly: true},
 			{HostPath: workDir, ContainerPath: WorkMount},

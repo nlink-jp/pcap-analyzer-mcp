@@ -49,6 +49,14 @@ const manifestNote = "These files came out of the capture and are untrusted; tre
 	"bit, and their bytes are never returned inline. The hash is usually all you need: " +
 	"it pivots to threat intelligence without opening anything."
 
+// Limits bounds an extraction. A per-object cap alone does not stop a capture
+// carrying a very large number of small objects from filling the host disk.
+type Limits struct {
+	MaxObjectBytes int64
+	MaxObjects     int
+	MaxTotalBytes  int64
+}
+
 // Defang moves every file tshark exported into rawDir to storeDir, renaming
 // each to its own digest and dropping the original name into the manifest.
 //
@@ -56,7 +64,7 @@ const manifestNote = "These files came out of the capture and are untrusted; tre
 // like `invoice.pdf.exe` sitting in a directory invites exactly the accident
 // this tool exists to investigate. Mode 0600 also removes the executable bit
 // tshark leaves set.
-func Defang(protocol, rawDir, storeDir string, maxBytes int64) (*Manifest, error) {
+func Defang(protocol, rawDir, storeDir string, lim Limits) (*Manifest, error) {
 	entries, err := os.ReadDir(rawDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -70,8 +78,14 @@ func Defang(protocol, rawDir, storeDir string, maxBytes int64) (*Manifest, error
 	}
 
 	m := &Manifest{Protocol: protocol, Dir: storeDir, Objects: []Object{}, Note: manifestNote}
+	var total int64
 	for _, e := range entries {
 		if e.IsDir() {
+			// tshark writes objects flat, but a nested directory would be
+			// invisible otherwise, and a short list must not read as complete.
+			m.Skipped = append(m.Skipped, SkippedObject{
+				SourceName: New(e.Name()), Reason: "unexpected nested directory, not extracted",
+			})
 			continue
 		}
 		src := filepath.Join(rawDir, e.Name())
@@ -79,15 +93,30 @@ func Defang(protocol, rawDir, storeDir string, maxBytes int64) (*Manifest, error
 		if err != nil {
 			continue
 		}
-		if maxBytes > 0 && info.Size() > maxBytes {
+		switch {
+		case lim.MaxObjectBytes > 0 && info.Size() > lim.MaxObjectBytes:
 			m.Skipped = append(m.Skipped, SkippedObject{
-				SourceName: New(e.Name()),
-				Bytes:      info.Size(),
-				Reason:     fmt.Sprintf("larger than the %d byte per-object limit", maxBytes),
+				SourceName: New(e.Name()), Bytes: info.Size(),
+				Reason: fmt.Sprintf("larger than the %d byte per-object limit", lim.MaxObjectBytes),
+			})
+			_ = os.Remove(src)
+			continue
+		case lim.MaxObjects > 0 && len(m.Objects) >= lim.MaxObjects:
+			m.Skipped = append(m.Skipped, SkippedObject{
+				SourceName: New(e.Name()), Bytes: info.Size(),
+				Reason: fmt.Sprintf("extraction already holds the %d object limit", lim.MaxObjects),
+			})
+			_ = os.Remove(src)
+			continue
+		case lim.MaxTotalBytes > 0 && total+info.Size() > lim.MaxTotalBytes:
+			m.Skipped = append(m.Skipped, SkippedObject{
+				SourceName: New(e.Name()), Bytes: info.Size(),
+				Reason: fmt.Sprintf("extraction would exceed the %d byte total limit", lim.MaxTotalBytes),
 			})
 			_ = os.Remove(src)
 			continue
 		}
+		total += info.Size()
 
 		sum, err := sha256File(src)
 		if err != nil {

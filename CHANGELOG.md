@@ -35,6 +35,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   errors and formatting; framing emitted ahead of the content), object defang
   to `<sha256>.bin` at mode 0600, and ranged reads windowed per direction
 
+### Security
+
+Findings from an independent review of the whole tree.
+
+- **Container runs now have a wall-clock timeout** (`[container.limits] timeout`,
+  default 30m) and the server context is signal-aware. Previously nothing bounded
+  a run: `rootCmd.Execute()` supplies `context.Background()`, so `cmd.Context()`
+  never cancelled, and a capture that drove a dissector into a pathological loop
+  would hang the server indefinitely — requests are handled in order, so one
+  input file took everything with it
+- **Panics are recovered** at the request boundary and, more importantly, inside
+  the background-job goroutine, where Go would otherwise terminate the process
+  and drop every queued job
+- **`query_packets` and `list_conversations` results now carry an `untrusted`
+  statement** ahead of the rows. Field values such as `_ws.col.Info` are text off
+  the wire and were returned unframed while `follow_stream` carefully wrapped the
+  same class of data. ADR-0007 and CLAUDE.md disagreed on this; ADR-0007 now sets
+  out three tiers explicitly
+- **`list_conversations` bounds distinct streams** (`[output] max_conversations`)
+  and reports what it dropped. The aggregation map lives in the server process,
+  outside the container's memory cgroup, and `top_n` applies after aggregation
+- **`extract_objects` bounds object count and total bytes**
+  (`[payload] extract_max_objects`, `extract_max_total_bytes`), not just per-object size
+- An oversized stdio frame no longer ends the session, live jobs are capped,
+  `cpu`/`memory` are validated as non-empty (an empty value silently dropped the
+  flag), and a negative `limit` is rejected
+
 ### Fixed
 
 - `follow_stream` no longer buffers a whole stream before windowing it; parsing

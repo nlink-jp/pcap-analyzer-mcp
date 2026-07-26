@@ -11,9 +11,26 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 )
+
+// Duration is a time.Duration that decodes from a TOML string such as "30m".
+type Duration struct{ time.Duration }
+
+// UnmarshalText implements encoding.TextUnmarshaler for TOML decoding.
+func (d *Duration) UnmarshalText(text []byte) error {
+	parsed, err := time.ParseDuration(string(text))
+	if err != nil {
+		return fmt.Errorf("invalid duration %q: %w", text, err)
+	}
+	d.Duration = parsed
+	return nil
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (d Duration) MarshalText() ([]byte, error) { return []byte(d.String()), nil }
 
 // EnvConfigPath overrides the config file location when set.
 const EnvConfigPath = "PCAP_ANALYZER_MCP_CONFIG"
@@ -42,6 +59,15 @@ type Limits struct {
 	CPU     string `toml:"cpu"`
 	Memory  string `toml:"memory"`
 	Network string `toml:"network"`
+
+	// Timeout bounds a single container run in wall-clock time.
+	//
+	// Memory is capped by the cgroup, but CPU and wall time are not: a capture
+	// crafted to drive a dissector into a pathological path — a recurring
+	// class of Wireshark CVE, and this tool's stated adversary — would
+	// otherwise run forever and, because the stdio server handles requests in
+	// order, take the whole server with it.
+	Timeout Duration `toml:"timeout"`
 }
 
 // Workspace controls where analysis state lives and which captures may be
@@ -63,6 +89,12 @@ type Output struct {
 	// SampleRows is how many leading rows accompany a file-backed result so
 	// the agent never needs a round trip just to learn the shape.
 	SampleRows int `toml:"sample_rows"`
+
+	// MaxConversations bounds the distinct streams list_conversations holds
+	// in memory. The container's memory cgroup does not cover this map, and
+	// top_n is applied after aggregation, so neither protects against a
+	// capture full of spoofed ports.
+	MaxConversations int `toml:"max_conversations"`
 }
 
 // Jobs bounds background analyses (ADR-0006).
@@ -86,7 +118,13 @@ type Payload struct {
 	// already been read in to serve it (ADR-0007 threat 4).
 	FollowMaxReassemblyBytes int `toml:"follow_max_reassembly_bytes"`
 
+	// ExtractMaxObjectBytes bounds one object.
 	ExtractMaxObjectBytes int64 `toml:"extract_max_object_bytes"`
+	// ExtractMaxObjects and ExtractMaxTotalBytes bound the extraction as a
+	// whole. A per-object cap does not stop a capture carrying a very large
+	// number of small objects from filling the host workspace.
+	ExtractMaxObjects    int   `toml:"extract_max_objects"`
+	ExtractMaxTotalBytes int64 `toml:"extract_max_total_bytes"`
 }
 
 // Log configures diagnostics. Payload bytes are never written here
@@ -105,15 +143,17 @@ func Default() Config {
 				CPU:     "2",
 				Memory:  "4g",
 				Network: "none",
+				Timeout: Duration{30 * time.Minute},
 			},
 		},
 		Workspace: Workspace{
 			AllowedPaths: nil,
 		},
 		Output: Output{
-			InlineMaxBytes:  65536,
-			DefaultRowLimit: 10000,
-			SampleRows:      5,
+			InlineMaxBytes:   65536,
+			DefaultRowLimit:  10000,
+			SampleRows:       5,
+			MaxConversations: 200000,
 		},
 		Jobs: Jobs{
 			MaxConcurrent: 2,
@@ -123,6 +163,8 @@ func Default() Config {
 			FollowMaxWindowBytes:     1 << 20,  // 1 MiB
 			FollowMaxReassemblyBytes: 64 << 20, // 64 MiB
 			ExtractMaxObjectBytes:    100 << 20,
+			ExtractMaxObjects:        5000,
+			ExtractMaxTotalBytes:     2 << 30, // 2 GiB
 		},
 		Log: Log{
 			Level: "info",
@@ -180,6 +222,15 @@ func (c *Config) Validate() error {
 	if c.Container.Image == "" {
 		return fmt.Errorf("container.image must not be empty")
 	}
+	if c.Container.Limits.CPU == "" {
+		return fmt.Errorf("container.limits.cpu must not be empty; an empty value silently drops the --cpus flag")
+	}
+	if c.Container.Limits.Memory == "" {
+		return fmt.Errorf("container.limits.memory must not be empty; an empty value silently drops the --memory flag")
+	}
+	if c.Container.Limits.Timeout.Duration <= 0 {
+		return fmt.Errorf("container.limits.timeout must be positive, got %s", c.Container.Limits.Timeout)
+	}
 	switch c.Container.Limits.Network {
 	case "none", "bridge":
 	default:
@@ -191,6 +242,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Output.DefaultRowLimit <= 0 {
 		return fmt.Errorf("output.default_row_limit must be positive, got %d", c.Output.DefaultRowLimit)
+	}
+	if c.Output.MaxConversations <= 0 {
+		return fmt.Errorf("output.max_conversations must be positive, got %d", c.Output.MaxConversations)
 	}
 	if c.Output.SampleRows < 0 {
 		return fmt.Errorf("output.sample_rows must not be negative, got %d", c.Output.SampleRows)
@@ -213,6 +267,12 @@ func (c *Config) Validate() error {
 	if c.Payload.ExtractMaxObjectBytes <= 0 {
 		return fmt.Errorf("payload.extract_max_object_bytes must be positive, got %d",
 			c.Payload.ExtractMaxObjectBytes)
+	}
+	if c.Payload.ExtractMaxObjects <= 0 {
+		return fmt.Errorf("payload.extract_max_objects must be positive, got %d", c.Payload.ExtractMaxObjects)
+	}
+	if c.Payload.ExtractMaxTotalBytes <= 0 {
+		return fmt.Errorf("payload.extract_max_total_bytes must be positive, got %d", c.Payload.ExtractMaxTotalBytes)
 	}
 	switch c.Log.Level {
 	case "debug", "info", "warn", "error":

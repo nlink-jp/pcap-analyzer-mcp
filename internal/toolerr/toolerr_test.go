@@ -90,6 +90,7 @@ func TestCodeWireValues(t *testing.T) {
 		{"CodeTsharkFailed", toolerr.CodeTsharkFailed, "tshark_failed"},
 		{"CodeJobNotFound", toolerr.CodeJobNotFound, "job_not_found"},
 		{"CodeAnalysisFailed", toolerr.CodeAnalysisFailed, "analysis_failed"},
+		{"CodeInternalError", toolerr.CodeInternalError, "internal_error"},
 		{"CodePayloadUnavailableTruncatedCapture", toolerr.CodePayloadUnavailableTruncatedCapture, "payload_unavailable_truncated_capture"},
 		{"CodeObjectTooLarge", toolerr.CodeObjectTooLarge, "object_too_large"},
 	}

@@ -25,7 +25,10 @@ func (d *Deps) dispatch(ctx context.Context, async bool, tool string, work job.R
 	}
 	// The job outlives this request, so it must not inherit the request's
 	// context — that is cancelled the moment the job id is returned.
-	id := d.Jobs.Submit(d.ServerCtx, tool, work)
+	id, err := d.Jobs.Submit(d.ServerCtx, tool, work)
+	if err != nil {
+		return nil, err
+	}
 	return map[string]any{
 		"job_id":    id,
 		"state":     job.StateQueued,

@@ -161,13 +161,24 @@ type Conversation struct {
 type ConversationAggregator struct {
 	transport string
 	byStream  map[int64]*Conversation
+
+	// maxStreams bounds the map. The container's memory cgroup does not cover
+	// this — the map lives in the server process — and top_n is applied after
+	// aggregation, so it is no protection either. A capture with millions of
+	// distinct streams (spoofed ports, a SYN flood) would otherwise grow it
+	// without limit.
+	maxStreams int
+	dropped    int64
 }
 
-// NewConversationAggregator returns an aggregator for "tcp" or "udp".
-func NewConversationAggregator(transport string) *ConversationAggregator {
+// NewConversationAggregator returns an aggregator for "tcp" or "udp",
+// tracking at most maxStreams distinct streams. Zero means unbounded and is
+// only for tests.
+func NewConversationAggregator(transport string, maxStreams int) *ConversationAggregator {
 	return &ConversationAggregator{
-		transport: transport,
-		byStream:  make(map[int64]*Conversation),
+		transport:  transport,
+		byStream:   make(map[int64]*Conversation),
+		maxStreams: maxStreams,
 	}
 }
 
@@ -192,6 +203,12 @@ func (a *ConversationAggregator) Add(row Row) {
 
 	c, seen := a.byStream[stream]
 	if !seen {
+		if a.maxStreams > 0 && len(a.byStream) >= a.maxStreams {
+			// Keep folding packets into streams already known rather than
+			// silently discarding them, and count what was left out.
+			a.dropped++
+			return
+		}
 		c = &Conversation{
 			Stream:     stream,
 			AAddress:   src,
@@ -259,6 +276,10 @@ func (a *ConversationAggregator) Result(sortBy string, topN int) []Conversation 
 
 // Len reports how many distinct conversations have been seen.
 func (a *ConversationAggregator) Len() int { return len(a.byStream) }
+
+// Dropped reports how many packets belonged to streams beyond the cap. A
+// non-zero value means the conversation list is incomplete.
+func (a *ConversationAggregator) Dropped() int64 { return a.dropped }
 
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {

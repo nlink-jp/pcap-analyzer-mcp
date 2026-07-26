@@ -2,6 +2,7 @@ package tshark
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -203,7 +204,7 @@ func TestParseProtocolHierarchyEmpty(t *testing.T) {
 // --- conversations ----------------------------------------------------------
 
 func TestConversationAggregation(t *testing.T) {
-	agg := NewConversationAggregator("tcp")
+	agg := NewConversationAggregator("tcp", 0)
 	// Two packets out, one back, on the same stream.
 	agg.Add(Row{"tcp.stream": "0", "ip.src": "10.0.0.1", "tcp.srcport": "1234",
 		"ip.dst": "10.0.0.2", "tcp.dstport": "80", "frame.len": "100", "frame.time_epoch": "10"})
@@ -236,7 +237,7 @@ func TestConversationAggregation(t *testing.T) {
 }
 
 func TestConversationAggregatorIgnoresRowsWithoutAStream(t *testing.T) {
-	agg := NewConversationAggregator("tcp")
+	agg := NewConversationAggregator("tcp", 0)
 	agg.Add(Row{"ip.src": "10.0.0.1"})            // e.g. an ARP frame
 	agg.Add(Row{"tcp.stream": "", "ip.src": "x"}) // field present but empty
 	if agg.Len() != 0 {
@@ -245,7 +246,7 @@ func TestConversationAggregatorIgnoresRowsWithoutAStream(t *testing.T) {
 }
 
 func TestConversationAggregatorIPv6(t *testing.T) {
-	agg := NewConversationAggregator("udp")
+	agg := NewConversationAggregator("udp", 0)
 	agg.Add(Row{"udp.stream": "3", "ipv6.src": "2001:db8::1", "udp.srcport": "53",
 		"ipv6.dst": "2001:db8::2", "udp.dstport": "5353", "frame.len": "80"})
 	got := agg.Result("bytes", 0)
@@ -255,7 +256,7 @@ func TestConversationAggregatorIPv6(t *testing.T) {
 }
 
 func TestConversationSortAndTopN(t *testing.T) {
-	agg := NewConversationAggregator("tcp")
+	agg := NewConversationAggregator("tcp", 0)
 	for i, size := range []string{"100", "900", "500"} {
 		agg.Add(Row{"tcp.stream": string(rune('0' + i)), "ip.src": "a", "tcp.srcport": "1",
 			"ip.dst": "b", "tcp.dstport": "2", "frame.len": size, "frame.time_epoch": "1"})
@@ -349,5 +350,41 @@ func TestClassifyUnknownFailure(t *testing.T) {
 	errors.As(err, &te)
 	if te.Details["exit_code"] != 2 {
 		t.Errorf("exit code should reach the agent: %v", te.Details)
+	}
+}
+
+// The aggregator map lives in the server process, outside the container's
+// memory cgroup, and top_n is applied after aggregation — so neither bounds it.
+func TestConversationAggregatorCapsDistinctStreams(t *testing.T) {
+	agg := NewConversationAggregator("tcp", 2)
+	for i := 0; i < 10; i++ {
+		agg.Add(Row{
+			"tcp.stream": strconv.Itoa(i), "ip.src": "a", "tcp.srcport": "1",
+			"ip.dst": "b", "tcp.dstport": "2", "frame.len": "10", "frame.time_epoch": "1",
+		})
+	}
+	if agg.Len() != 2 {
+		t.Errorf("held %d streams with a cap of 2", agg.Len())
+	}
+	if agg.Dropped() != 8 {
+		t.Errorf("Dropped = %d, want 8 — silence here would read as a complete list", agg.Dropped())
+	}
+}
+
+// Packets belonging to streams already known keep counting after the cap is
+// reached; only new streams are refused.
+func TestConversationAggregatorKeepsCountingKnownStreams(t *testing.T) {
+	agg := NewConversationAggregator("tcp", 1)
+	row := func(stream string) Row {
+		return Row{"tcp.stream": stream, "ip.src": "a", "tcp.srcport": "1",
+			"ip.dst": "b", "tcp.dstport": "2", "frame.len": "10", "frame.time_epoch": "1"}
+	}
+	agg.Add(row("0"))
+	agg.Add(row("1")) // refused
+	agg.Add(row("0")) // still counted
+
+	got := agg.Result("bytes", 0)
+	if len(got) != 1 || got[0].Frames != 2 {
+		t.Errorf("known stream stopped accumulating: %+v", got)
 	}
 }

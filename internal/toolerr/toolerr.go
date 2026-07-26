@@ -84,6 +84,9 @@ const (
 	// CodeAnalysisFailed is the fallback for a background job that failed
 	// without producing a more specific code.
 	CodeAnalysisFailed = "analysis_failed"
+	// CodeInternalError reports a bug in this server — a panic recovered at
+	// the request or job boundary. It is never the caller's fault.
+	CodeInternalError = "internal_error"
 
 	// Payload tools (ADR-0007). A truncated capture has no payload to
 	// extract; that is an answer, not a transient failure, and saying so

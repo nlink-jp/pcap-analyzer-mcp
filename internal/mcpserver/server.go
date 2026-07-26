@@ -6,6 +6,7 @@
 package mcpserver
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -73,6 +74,19 @@ func (s *Server) Serve(ctx context.Context) error {
 		line, err := s.transport.ReadMessage()
 		if errors.Is(err, io.EOF) {
 			return nil
+		}
+		if errors.Is(err, bufio.ErrTooLong) {
+			// One frame over the 1MB cap is a bad message, not a reason to end
+			// the session. Memory was never at risk — the buffer is bounded —
+			// so answer and carry on. The rest of that frame is skipped by the
+			// scanner, which may desynchronise one further message; a parse
+			// error is the honest response to that too.
+			s.logger.Warn("oversized frame discarded")
+			if werr := s.writeError(nil, jsonrpc.CodeParseError,
+				"message exceeds the 1MB frame limit"); werr != nil {
+				return werr
+			}
+			continue
 		}
 		if err != nil {
 			return err

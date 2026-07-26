@@ -18,6 +18,11 @@ memory = "4g"
 # what makes live capture impossible by construction. "bridge" is accepted but
 # has no legitimate use for read-only capture analysis.
 network = "none"
+# Wall-clock bound on one container run. Memory is capped by the cgroup, but
+# CPU and wall time are not — and a capture crafted to drive a dissector into a
+# pathological loop is this tool's stated adversary. Requests are handled in
+# order, so an unbounded run takes the whole server with it.
+timeout = "30m"
 
 [workspace]
 # A guardrail, not a sandbox boundary (ADR-0004). Empty means any readable
@@ -34,6 +39,10 @@ default_row_limit = 10000
 # Leading rows attached to a file-backed result so the agent never needs a
 # round trip just to learn the shape of the data.
 sample_rows = 5
+# Distinct streams list_conversations will hold in memory. This map lives in the
+# server process, outside the container's memory cgroup, and top_n is applied
+# after aggregation — so neither bounds it.
+max_conversations = 200000
 
 [jobs]
 # Background analyses run one podman container each. The cap keeps a handful of
@@ -49,7 +58,11 @@ follow_max_window_bytes = 1048576       # largest window a caller may request
 # read is no protection if the whole transfer has already been read in to serve
 # it, so this is the bound that actually matters.
 follow_max_reassembly_bytes = 67108864  # 64 MiB
-extract_max_object_bytes = 104857600    # 100 MiB
+extract_max_object_bytes = 104857600    # 100 MiB, per object
+# A per-object cap does not stop a capture carrying a very large number of small
+# objects from filling the workspace.
+extract_max_objects = 5000
+extract_max_total_bytes = 2147483648    # 2 GiB across one extraction
 
 [log]
 level = "info"          # debug | info | warn | error

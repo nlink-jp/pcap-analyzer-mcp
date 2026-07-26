@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"runtime/debug"
 
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/jsonrpc"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/toolerr"
@@ -55,7 +56,7 @@ func (s *Server) handleToolsCall(ctx context.Context, req jsonrpc.Request) error
 	if !ok {
 		return s.writeError(req.ID, jsonrpc.CodeMethodNotFound, "unknown tool: "+p.Name)
 	}
-	out, err := h(ctx, p.Arguments)
+	out, err := s.invoke(ctx, h, p.Arguments)
 	if err != nil {
 		return s.writeToolError(req, err)
 	}
@@ -66,6 +67,22 @@ func (s *Server) handleToolsCall(ctx context.Context, req jsonrpc.Request) error
 	return s.writeResult(req.ID, toolsCallResult{
 		Content: []ContentBlock{{Type: "text", Text: string(body)}},
 	})
+}
+
+// invoke calls a handler with a recover barrier.
+//
+// Handlers parse bytes derived from a hostile capture. A panic in one would
+// otherwise take the whole server down and drop every queued job with it, so
+// it is converted into a failed call instead.
+func (s *Server) invoke(ctx context.Context, h ToolHandler, args json.RawMessage) (out any, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.logger.Error("tool handler panicked", "panic", r, "stack", string(debug.Stack()))
+			err = toolerr.Newf(toolerr.CodeInternalError,
+				"the server hit a bug handling this call: %v", r)
+		}
+	}()
+	return h(ctx, args)
 }
 
 // writeToolError emits a tool error per MCP convention: a result with

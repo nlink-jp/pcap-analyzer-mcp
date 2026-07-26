@@ -5,7 +5,10 @@
 package cmd
 
 import (
+	"context"
 	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -34,8 +37,16 @@ See docs/{en,ja}/ for the RFP, the ADRs, and the architecture document.`,
 
 // Execute runs the root command and exits non-zero on failure. cobra has
 // already printed the error, so this only sets the exit status.
+//
+// The context is signal-aware and is what every subcommand sees through
+// cmd.Context(). cobra's plain Execute() would hand them context.Background(),
+// which never cancels — and since background jobs run under that same context
+// (ADR-0006), an uncancellable context means an uncancellable analysis.
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
 		os.Exit(1)
 	}
 }

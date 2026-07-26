@@ -132,7 +132,7 @@ func (d *Deps) listConversations() registration {
 
 			return d.dispatch(ctx, a.Async, "list_conversations",
 				func(runCtx context.Context, report func(job.Progress)) (any, error) {
-					agg := tshark.NewConversationAggregator(a.Transport)
+					agg := tshark.NewConversationAggregator(a.Transport, d.Cfg.Output.MaxConversations)
 					cmd := tshark.ConversationArgs(a.Transport, a.Filter)
 					rows := 0
 					run, err := d.Podman.RunOnceStream(runCtx, d.runOpts(ws, cmd), func(r io.Reader) error {
@@ -153,7 +153,8 @@ func (d *Deps) listConversations() registration {
 					}
 
 					convs := agg.Result(a.SortBy, a.TopN)
-					return map[string]any{
+					out := map[string]any{
+						"untrusted":     output.UntrustedFieldsNote,
 						"workspace_id":  ws.ID,
 						"transport":     a.Transport,
 						"filter":        a.Filter,
@@ -161,7 +162,16 @@ func (d *Deps) listConversations() registration {
 						"returned":      len(convs),
 						"truncated":     a.TopN > 0 && agg.Len() > len(convs),
 						"conversations": convs,
-					}, nil
+					}
+					if dropped := agg.Dropped(); dropped > 0 {
+						out["truncated"] = true
+						out["streams_dropped"] = dropped
+						out["streams_limit"] = d.Cfg.Output.MaxConversations
+						out["note"] = "This capture has more distinct streams than the server " +
+							"will hold in memory, so the list is incomplete. Narrow it with a " +
+							"filter, or raise [output] max_conversations."
+					}
+					return out, nil
 				})
 		},
 	}
@@ -229,6 +239,10 @@ func (d *Deps) handleQueryPackets(ctx context.Context, raw json.RawMessage) (any
 	}
 	limit := d.Cfg.Output.DefaultRowLimit
 	if a.Limit != nil {
+		if *a.Limit < 0 {
+			return nil, toolerr.New(toolerr.CodeInvalidArguments,
+				"limit must not be negative; use 0 for an unlimited export")
+		}
 		limit = *a.Limit
 	}
 

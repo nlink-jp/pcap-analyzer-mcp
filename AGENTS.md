@@ -87,6 +87,8 @@ no container. Expect it to be the most-called tool.
 - **Payload must stay inside `payload.Untrusted`.** It redacts in `String`/`LogValue`, so nothing leaks through a log line or an error. `Reveal()` is the only way out — grep for it to audit every such site.
 - **Never store an object under a name from the wire.** tshark writes `object1.text%2fplain` at 0644; `payload.Defang` renames to `<sha256>.bin` at 0600.
 - **A ranged read is not a memory bound.** `follow_stream` streams tshark's output under `follow_max_reassembly_bytes`; buffering first and windowing after would let a multi-gigabyte stream through anyway.
+- **Every container run needs a timeout.** `RunOnceOpts.Timeout` is populated from config in `runOpts`; a run without one can hang the server, because requests are handled in order.
+- **The server handles requests serially.** A synchronous whole-capture call blocks everything else including `check_job` — which is why heavy tools offer `async`, and why the timeout matters.
 - **stdout is the protocol channel.** All logging goes to stderr; a stray `fmt.Println` corrupts the JSON-RPC stream.
 
 ## Conventions (organization-wide)

@@ -341,7 +341,11 @@ func (d *Deps) runExtract(ctx context.Context, ws *workspace.Workspace, protocol
 		return nil, tshark.ClassifyError(res.ExitCode, string(res.Stderr))
 	}
 
-	manifest, err := payload.Defang(protocol, rawHost, ws.ObjectsDir(), d.Cfg.Payload.ExtractMaxObjectBytes)
+	manifest, err := payload.Defang(protocol, rawHost, ws.ObjectsDir(), payload.Limits{
+		MaxObjectBytes: d.Cfg.Payload.ExtractMaxObjectBytes,
+		MaxObjects:     d.Cfg.Payload.ExtractMaxObjects,
+		MaxTotalBytes:  d.Cfg.Payload.ExtractMaxTotalBytes,
+	})
 	if err != nil {
 		return nil, toolerr.Newf(toolerr.CodeAnalysisFailed, "%v", err)
 	}

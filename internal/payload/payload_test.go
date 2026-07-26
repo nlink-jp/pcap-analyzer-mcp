@@ -150,7 +150,7 @@ func TestDefangRenamesToTheDigest(t *testing.T) {
 	writeFile(t, filepath.Join(raw, "object1.text%2fplain"), "malware bytes")
 	writeFile(t, filepath.Join(raw, "invoice.pdf.exe"), "other bytes")
 
-	m, err := Defang("http", raw, store, 0)
+	m, err := Defang("http", raw, store, Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,7 +176,7 @@ func TestDefangStripsTheExecutableBit(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m, err := Defang("http", raw, store, 0)
+	m, err := Defang("http", raw, store, Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestDefangKeepsTheOriginalNameAsUntrusted(t *testing.T) {
 	raw, store := t.TempDir(), t.TempDir()
 	writeFile(t, raw+"/evil-name.bin", "x")
 
-	m, err := Defang("http", raw, store, 0)
+	m, err := Defang("http", raw, store, Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -216,7 +216,7 @@ func TestDefangRecordsWhatItSkipped(t *testing.T) {
 	writeFile(t, filepath.Join(raw, "small.bin"), "tiny")
 	writeFile(t, filepath.Join(raw, "huge.bin"), strings.Repeat("A", 500))
 
-	m, err := Defang("http", raw, store, 100)
+	m, err := Defang("http", raw, store, Limits{MaxObjectBytes: 100})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,7 +240,7 @@ func TestDefangDeduplicatesIdenticalObjects(t *testing.T) {
 	writeFile(t, filepath.Join(raw, "a.bin"), "same content")
 	writeFile(t, filepath.Join(raw, "b.bin"), "same content")
 
-	m, err := Defang("http", raw, store, 0)
+	m, err := Defang("http", raw, store, Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestDefangDeduplicatesIdenticalObjects(t *testing.T) {
 
 // No objects of that kind is an answer, not a failure.
 func TestDefangOnMissingDirectory(t *testing.T) {
-	m, err := Defang("smb", filepath.Join(t.TempDir(), "never-created"), t.TempDir(), 0)
+	m, err := Defang("smb", filepath.Join(t.TempDir(), "never-created"), t.TempDir(), Limits{})
 	if err != nil {
 		t.Fatalf("tshark writes nothing when there is nothing to export: %v", err)
 	}
@@ -264,7 +264,7 @@ func TestDefangOnMissingDirectory(t *testing.T) {
 func TestManifestWarns(t *testing.T) {
 	raw, store := t.TempDir(), t.TempDir()
 	writeFile(t, filepath.Join(raw, "x.bin"), "x")
-	m, err := Defang("http", raw, store, 0)
+	m, err := Defang("http", raw, store, Limits{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,5 +297,45 @@ func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), fs.FileMode(0o644)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A per-object cap does not stop a capture carrying thousands of small objects
+// from filling the host workspace.
+func TestDefangCapsObjectCount(t *testing.T) {
+	raw, store := t.TempDir(), t.TempDir()
+	for i := 0; i < 10; i++ {
+		writeFile(t, filepath.Join(raw, fmt.Sprintf("o%d.bin", i)), fmt.Sprintf("content %d", i))
+	}
+	m, err := Defang("http", raw, store, Limits{MaxObjects: 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m.Objects) != 3 {
+		t.Errorf("kept %d objects with a cap of 3", len(m.Objects))
+	}
+	if len(m.Skipped) != 7 {
+		t.Errorf("skipped %d, want 7 reported", len(m.Skipped))
+	}
+}
+
+func TestDefangCapsTotalBytes(t *testing.T) {
+	raw, store := t.TempDir(), t.TempDir()
+	for i := 0; i < 5; i++ {
+		writeFile(t, filepath.Join(raw, fmt.Sprintf("o%d.bin", i)), strings.Repeat("x", 100)+fmt.Sprint(i))
+	}
+	m, err := Defang("http", raw, store, Limits{MaxTotalBytes: 250})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var total int64
+	for _, o := range m.Objects {
+		total += o.Bytes
+	}
+	if total > 250 {
+		t.Errorf("stored %d bytes with a 250 byte cap", total)
+	}
+	if len(m.Skipped) == 0 {
+		t.Error("what was left out must be reported")
 	}
 }
