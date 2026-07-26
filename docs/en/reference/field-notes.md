@@ -35,7 +35,10 @@ tshark 4.0.17.
 > `knr.exe`) and nothing came back at all — not even the benign `ncsi.txt` — and `_raw`
 > was rolled back, so there was nothing left to inspect either. Writing up this note is
 > what identified it as a defect: over-size objects were already being skipped and
-> recorded, and unreadable ones should have been too. Fixed since.
+> recorded, and unreadable ones should have been too. Fixed in v0.1.2, and re-measured
+> against this same capture with VirusBarrier live: `ncsi.txt` comes back hashed, and
+> both samples are reported in `skipped` with their sizes (323072 and 2437120 bytes,
+> read from the directory entry before the read failed).
 
 What this costs you is **the quarantined object only**: no SHA-256, because the bytes
 were never readable. The rest of the extraction is unaffected.
@@ -125,10 +128,17 @@ ASCII-mode `STOR` from the same capture (the stolen-credential HTML log) comes o
 
 It is a limitation of tshark 4.0.17's ftp-data dissector:
 
-- **Not AV quarantine** — re-running inside the AV-excluded path above gives the
-  identical result (still one object)
+- **Not AV quarantine** — `skipped` comes back **empty**, so the executables were never
+  written to `_raw` in the first place; there was nothing for the AV to take. This is
+  the check to reach for, because it costs nothing and touches no settings. (The
+  original measurement instead re-ran inside an AV-excluded path and got the identical
+  result — same conclusion, but it required removing protection to get there)
 - **Not this server** — the Wireshark GUI behaves the same way, and the Unit 42 article
   itself tells readers to use Follow TCP Stream → Save as Raw for the executables
+
+An empty `skipped` alongside a short `objects` list is worth internalising as a
+distinct signal: **the dissector did not produce the file**, as opposed to producing it
+and losing it.
 
 ### Working around it
 
