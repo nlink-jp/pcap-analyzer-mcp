@@ -84,6 +84,7 @@ func TestValidateRejectsBadValues(t *testing.T) {
 		{"zero follow cap", func(c *Config) { c.Payload.FollowInlineMaxBytes = 0 }},
 		{"zero object cap", func(c *Config) { c.Payload.ExtractMaxObjectBytes = 0 }},
 		{"unknown log level", func(c *Config) { c.Log.Level = "trace" }},
+		{"zero job concurrency", func(c *Config) { c.Jobs.MaxConcurrent = 0 }},
 		{"relative allowed path", func(c *Config) { c.Workspace.AllowedPaths = []string{"captures"} }},
 	}
 	for _, tt := range tests {

@@ -11,6 +11,7 @@ import (
 	"io"
 
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/config"
+	"github.com/nlink-jp/pcap-analyzer-mcp/internal/job"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/mcpserver"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/podman"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/toolerr"
@@ -29,6 +30,12 @@ type Deps struct {
 	Cfg       config.Config
 	Podman    ContainerRunner
 	Workspace *workspace.Manager
+	Jobs      *job.Manager
+
+	// ServerCtx outlives any single request. Background jobs run under it,
+	// because the request context is cancelled as soon as the job id is
+	// returned (ADR-0006).
+	ServerCtx context.Context
 }
 
 // Register installs every tool on the server.
@@ -54,6 +61,7 @@ func (d *Deps) all() []registration {
 		d.protocolHierarchy(),
 		d.listConversations(),
 		d.queryPackets(),
+		d.checkJob(),
 	}
 }
 

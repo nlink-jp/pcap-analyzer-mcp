@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/config"
+	"github.com/nlink-jp/pcap-analyzer-mcp/internal/job"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/mcpserver"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/podman"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/toolerr"
@@ -47,7 +48,13 @@ func (f *fakeRunner) ImageID(context.Context, string) (string, error) {
 
 func newDeps(r ContainerRunner) *Deps {
 	cfg := config.Default()
-	return &Deps{Cfg: cfg, Podman: r, Workspace: workspace.NewManager(cfg, nil)}
+	return &Deps{
+		Cfg:       cfg,
+		Podman:    r,
+		Workspace: workspace.NewManager(cfg, nil),
+		Jobs:      job.NewManager(cfg.Jobs.MaxConcurrent),
+		ServerCtx: context.Background(),
+	}
 }
 
 func find(t *testing.T, d *Deps, name string) registration {
@@ -99,8 +106,8 @@ func TestEverySchemaIsAValidObjectSchema(t *testing.T) {
 			t.Errorf("%s: inputSchema has no properties", r.desc.Name)
 		}
 	}
-	if len(names) != 9 {
-		t.Errorf("registered %d tools, want 9", len(names))
+	if len(names) != 10 {
+		t.Errorf("registered %d tools, want 10", len(names))
 	}
 }
 
@@ -109,7 +116,7 @@ func TestRegisterInstallsEveryTool(t *testing.T) {
 	Register(srv, newDeps(&fakeRunner{}))
 	// Registering twice would panic or duplicate; just assert it completed and
 	// the registry is the same size as all().
-	if got := len(newDeps(&fakeRunner{}).all()); got != 9 {
+	if got := len(newDeps(&fakeRunner{}).all()); got != 10 {
 		t.Errorf("all() = %d", got)
 	}
 }

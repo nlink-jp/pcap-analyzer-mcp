@@ -40,6 +40,7 @@ Design points:
 - Jobs are in-memory and non-persistent, lost on server restart. If `check_job` returns `job_not_found`, the agent simply re-runs the original tool (results are idempotent)
 - **Job concurrency is capped** (addressing the Negative in ADR-0002). Unbounded parallel `podman run` would saturate the host
 - `check_job` returns progress (the current phase) and, on completion, the same unified shape defined in ADR-0005
+- **Progress carries no percentage.** tshark does not report how far through a capture it is, so any percentage would be invented — and an agent that believes a number will wait on it. What is reported is the phase (`queued` / `reading` / `counting` / `done`) and the row count, both of which are actually known
 
 ## Consequences
 

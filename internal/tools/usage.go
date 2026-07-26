@@ -65,6 +65,16 @@ func usageDoc(inlineMaxBytes, defaultRowLimit int) map[string]any {
 			"4. list_conversations — who talked to whom, and the stream indices",
 			"5. query_packets — narrow down with a display filter",
 		},
+		"async": []string{
+			"create_workspace, protocol_hierarchy, list_conversations and query_packets " +
+				"accept async: true. They return a job_id immediately; poll check_job.",
+			"Use it when the capture is large — a full pass takes minutes and a synchronous " +
+				"call would hit your request timeout. describe_workspace reports packet_count " +
+				"and file_size, which is what to decide on.",
+			"Arguments are still validated before the job is created, so a mistake fails " +
+				"immediately rather than as a failed job.",
+			"A finished job returns exactly what the synchronous call would have returned.",
+		},
 		"result_contract": map[string]any{
 			"shape": "Every result-returning tool answers with the same keys. `delivery` is " +
 				"\"inline\" or \"file\"; nothing else changes between the two.",
@@ -90,6 +100,10 @@ func usageDoc(inlineMaxBytes, defaultRowLimit int) map[string]any {
 			"container_failed":    "podman could not run. `pcap-analyzer-mcp doctor` diagnoses this.",
 			"payload_unavailable_truncated_capture": "The capture has no payload to extract. " +
 				"This is a property of the evidence; retrying will not change it.",
+			"job_not_found": "Jobs live in memory and do not survive a server restart. " +
+				"Re-run the original tool — the capture is read-only, so the result is the same.",
+			"analysis_failed": "A background job failed without a more specific cause; " +
+				"details carry what is known.",
 		},
 		"limits": []string{
 			"Read-only analysis of capture files. This server cannot capture traffic — the " +

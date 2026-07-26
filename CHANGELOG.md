@@ -27,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parsing, protocol hierarchy, conversation aggregation, error classification),
   `internal/output` (the ADR-0005 contract), `internal/tools` (nine tools), and
   a wired-up `serve`
+- Phase 1 Track F: `internal/job` — background execution with `async: true` on
+  the four whole-capture tools, a `check_job` tool, and a `[jobs]
+  max_concurrent` cap on simultaneous container runs
 
 ### Changed
 

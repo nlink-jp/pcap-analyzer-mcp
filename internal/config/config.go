@@ -23,6 +23,7 @@ type Config struct {
 	Container Container `toml:"container"`
 	Workspace Workspace `toml:"workspace"`
 	Output    Output    `toml:"output"`
+	Jobs      Jobs      `toml:"jobs"`
 	Payload   Payload   `toml:"payload"`
 	Log       Log       `toml:"log"`
 }
@@ -64,6 +65,14 @@ type Output struct {
 	SampleRows int `toml:"sample_rows"`
 }
 
+// Jobs bounds background analyses (ADR-0006).
+type Jobs struct {
+	// MaxConcurrent caps simultaneous background runs. Each one is a
+	// `podman run`; unbounded parallelism would saturate the host, which is
+	// the cost of the ephemeral-container model (ADR-0002).
+	MaxConcurrent int `toml:"max_concurrent"`
+}
+
 // Payload bounds the payload-returning tools (ADR-0007).
 type Payload struct {
 	FollowInlineMaxBytes  int   `toml:"follow_inline_max_bytes"`
@@ -95,6 +104,9 @@ func Default() Config {
 			InlineMaxBytes:  65536,
 			DefaultRowLimit: 10000,
 			SampleRows:      5,
+		},
+		Jobs: Jobs{
+			MaxConcurrent: 2,
 		},
 		Payload: Payload{
 			FollowInlineMaxBytes:  8192,
@@ -170,6 +182,9 @@ func (c *Config) Validate() error {
 	}
 	if c.Output.SampleRows < 0 {
 		return fmt.Errorf("output.sample_rows must not be negative, got %d", c.Output.SampleRows)
+	}
+	if c.Jobs.MaxConcurrent <= 0 {
+		return fmt.Errorf("jobs.max_concurrent must be positive, got %d", c.Jobs.MaxConcurrent)
 	}
 	if c.Payload.FollowInlineMaxBytes <= 0 {
 		return fmt.Errorf("payload.follow_inline_max_bytes must be positive, got %d",

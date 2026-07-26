@@ -35,6 +35,12 @@ default_row_limit = 10000
 # round trip just to learn the shape of the data.
 sample_rows = 5
 
+[jobs]
+# Background analyses run one podman container each. The cap keeps a handful of
+# concurrent full-capture passes from saturating the machine — on macOS the
+# Podman VM's memory is the binding constraint.
+max_concurrent = 2
+
 [payload]
 # Payload-returning tools are bounded separately (ADR-0007).
 follow_inline_max_bytes = 8192

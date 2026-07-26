@@ -117,7 +117,7 @@
 
 ### 4.1 in-memory（サーバープロセス内）
 
-- **非同期ジョブのみ**（`internal/job`）。インメモリ・非永続。サーバー再起動で失われる
+- **非同期ジョブのみ**（`internal/job`）。インメモリ・非永続。サーバー再起動で失われる。`[jobs] max_concurrent` で同時実行数を制限（既定 2）。スロット待ちの間は `queued` 状態で可視化される
 - ワークスペースの一覧・状態は in-memory に持たない
 
 ### 4.2 ディスク（永続）
@@ -141,7 +141,7 @@
 
 ツールエラーは JSON-RPC のエラーではなく、`isError: true` + 構造化 JSON（`{code, message, details}`）を content に載せて返す（data-toolbox-mcp `internal/toolerr` を移植）。
 
-sentinel code 案: `invalid_arguments` / `missing_argument` / `invalid_workspace_id` / `workspace_not_found` / `path_not_allowed` / `pcap_unreadable` / `invalid_display_filter` / `container_failed` / `tshark_failed` / `job_not_found` / `payload_unavailable_truncated_capture` / `object_too_large`
+sentinel code 案: `invalid_arguments` / `missing_argument` / `invalid_workspace_id` / `workspace_not_found` / `path_not_allowed` / `pcap_unreadable` / `invalid_display_filter` / `container_failed` / `tshark_failed` / `job_not_found` / `analysis_failed` / `payload_unavailable_truncated_capture` / `object_too_large`
 
 ### 5.2 自己修復ヒント
 

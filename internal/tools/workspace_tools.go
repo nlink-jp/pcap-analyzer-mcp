@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 
+	"github.com/nlink-jp/pcap-analyzer-mcp/internal/job"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/mcpserver"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/toolerr"
 	"github.com/nlink-jp/pcap-analyzer-mcp/runtime"
@@ -18,6 +19,7 @@ func bytesReader(b []byte) io.Reader { return bytes.NewReader(b) }
 type createWorkspaceArgs struct {
 	PcapPath     string `json:"pcap_path"`
 	WorkspaceDir string `json:"workspace_dir"`
+	Async        bool   `json:"async"`
 }
 
 func (d *Deps) createWorkspace() registration {
@@ -32,7 +34,8 @@ func (d *Deps) createWorkspace() registration {
   "type": "object",
   "properties": {
     "pcap_path": {"type": "string", "description": "Absolute host path to a .pcap or .pcapng file."},
-    "workspace_dir": {"type": "string", "description": "Absolute host directory you can write to. Analysis output is written under it."}
+    "workspace_dir": {"type": "string", "description": "Absolute host directory you can write to. Analysis output is written under it."},
+    "async": {"type": "boolean", "description": "Run in the background and return a job_id immediately. Use for large captures: a full pass takes minutes and would otherwise hit your request timeout. Poll with check_job."}
   },
   "required": ["pcap_path", "workspace_dir"],
   "additionalProperties": false
@@ -46,11 +49,17 @@ func (d *Deps) createWorkspace() registration {
 			if a.WorkspaceDir == "" {
 				return nil, toolerr.New(toolerr.CodeMissingArgument, "workspace_dir is required")
 			}
-			ws, err := d.Workspace.Create(ctx, a.PcapPath, a.WorkspaceDir)
-			if err != nil {
-				return nil, err
-			}
-			return describePayload(ws.ID, ws.Dir, ws.Meta, nil), nil
+			// Reading a large capture end to end is exactly the case async
+			// exists for, so it is offered here too.
+			return d.dispatch(ctx, a.Async, "create_workspace",
+				func(runCtx context.Context, report func(job.Progress)) (any, error) {
+					report(job.Progress{Phase: "reading", Note: "hashing and reading capture metadata"})
+					ws, err := d.Workspace.Create(runCtx, a.PcapPath, a.WorkspaceDir)
+					if err != nil {
+						return nil, err
+					}
+					return describePayload(ws.ID, ws.Dir, ws.Meta, nil), nil
+				})
 		},
 	}
 }

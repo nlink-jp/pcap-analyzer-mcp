@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nlink-jp/pcap-analyzer-mcp/internal/job"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/mcpserver"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/output"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/toolerr"
@@ -23,6 +24,7 @@ type hierarchyArgs struct {
 	WorkspaceID  string `json:"workspace_id"`
 	WorkspaceDir string `json:"workspace_dir"`
 	Filter       string `json:"filter"`
+	Async        bool   `json:"async"`
 }
 
 func (d *Deps) protocolHierarchy() registration {
@@ -37,7 +39,8 @@ func (d *Deps) protocolHierarchy() registration {
   "properties": {
     "workspace_id": {"type": "string"},
     "workspace_dir": {"type": "string"},
-    "filter": {"type": "string", "description": "Optional Wireshark display filter to scope the statistics."}
+    "filter": {"type": "string", "description": "Optional Wireshark display filter to scope the statistics."},
+    "async": {"type": "boolean", "description": "Run in the background and return a job_id immediately. Use for large captures: a full pass takes minutes and would otherwise hit your request timeout. Poll with check_job."}
   },
   "required": ["workspace_id", "workspace_dir"],
   "additionalProperties": false
@@ -52,22 +55,26 @@ func (d *Deps) protocolHierarchy() registration {
 			if err != nil {
 				return nil, err
 			}
-			res, err := d.Podman.RunOnce(ctx, d.runOpts(ws, tshark.HierarchyArgs(a.Filter)))
-			if err != nil {
-				return nil, toolerr.Newf(toolerr.CodeContainerFailed, "%v", err)
-			}
-			if res.ExitCode != 0 {
-				return nil, tshark.ClassifyError(res.ExitCode, string(res.Stderr))
-			}
-			tree, err := tshark.ParseProtocolHierarchy(string(res.Stdout))
-			if err != nil {
-				return nil, toolerr.Newf(toolerr.CodeTsharkFailed, "%v", err)
-			}
-			return map[string]any{
-				"workspace_id": ws.ID,
-				"filter":       a.Filter,
-				"hierarchy":    tree,
-			}, nil
+			return d.dispatch(ctx, a.Async, "protocol_hierarchy",
+				func(runCtx context.Context, report func(job.Progress)) (any, error) {
+					report(job.Progress{Phase: "reading"})
+					res, err := d.Podman.RunOnce(runCtx, d.runOpts(ws, tshark.HierarchyArgs(a.Filter)))
+					if err != nil {
+						return nil, toolerr.Newf(toolerr.CodeContainerFailed, "%v", err)
+					}
+					if res.ExitCode != 0 {
+						return nil, tshark.ClassifyError(res.ExitCode, string(res.Stderr))
+					}
+					tree, err := tshark.ParseProtocolHierarchy(string(res.Stdout))
+					if err != nil {
+						return nil, toolerr.Newf(toolerr.CodeTsharkFailed, "%v", err)
+					}
+					return map[string]any{
+						"workspace_id": ws.ID,
+						"filter":       a.Filter,
+						"hierarchy":    tree,
+					}, nil
+				})
 		},
 	}
 }
@@ -81,6 +88,7 @@ type conversationArgs struct {
 	Filter       string `json:"filter"`
 	SortBy       string `json:"sort_by"`
 	TopN         int    `json:"top_n"`
+	Async        bool   `json:"async"`
 }
 
 func (d *Deps) listConversations() registration {
@@ -98,7 +106,8 @@ func (d *Deps) listConversations() registration {
     "transport": {"type": "string", "enum": ["tcp", "udp"], "description": "Default tcp."},
     "filter": {"type": "string", "description": "Optional display filter, ANDed with the transport."},
     "sort_by": {"type": "string", "enum": ["bytes", "frames", "start", "stream"], "description": "Default bytes."},
-    "top_n": {"type": "integer", "description": "Keep only the first N after sorting. 0 or absent means all."}
+    "top_n": {"type": "integer", "description": "Keep only the first N after sorting. 0 or absent means all."},
+    "async": {"type": "boolean", "description": "Run in the background and return a job_id immediately. Use for large captures: a full pass takes minutes and would otherwise hit your request timeout. Poll with check_job."}
   },
   "required": ["workspace_id", "workspace_dir"],
   "additionalProperties": false
@@ -121,31 +130,39 @@ func (d *Deps) listConversations() registration {
 				return nil, err
 			}
 
-			agg := tshark.NewConversationAggregator(a.Transport)
-			cmd := tshark.ConversationArgs(a.Transport, a.Filter)
-			run, err := d.Podman.RunOnceStream(ctx, d.runOpts(ws, cmd), func(r io.Reader) error {
-				return tshark.ParseFields(r, func(row tshark.Row) bool {
-					agg.Add(row)
-					return true
-				})
-			})
-			if err != nil {
-				return nil, toolerr.Newf(toolerr.CodeContainerFailed, "%v", err)
-			}
-			if run.ExitCode != 0 {
-				return nil, tshark.ClassifyError(run.ExitCode, string(run.Stderr))
-			}
+			return d.dispatch(ctx, a.Async, "list_conversations",
+				func(runCtx context.Context, report func(job.Progress)) (any, error) {
+					agg := tshark.NewConversationAggregator(a.Transport)
+					cmd := tshark.ConversationArgs(a.Transport, a.Filter)
+					rows := 0
+					run, err := d.Podman.RunOnceStream(runCtx, d.runOpts(ws, cmd), func(r io.Reader) error {
+						return tshark.ParseFields(r, func(row tshark.Row) bool {
+							agg.Add(row)
+							rows++
+							if rows%10000 == 0 {
+								report(job.Progress{Phase: "reading", Rows: rows})
+							}
+							return true
+						})
+					})
+					if err != nil {
+						return nil, toolerr.Newf(toolerr.CodeContainerFailed, "%v", err)
+					}
+					if run.ExitCode != 0 {
+						return nil, tshark.ClassifyError(run.ExitCode, string(run.Stderr))
+					}
 
-			convs := agg.Result(a.SortBy, a.TopN)
-			return map[string]any{
-				"workspace_id":  ws.ID,
-				"transport":     a.Transport,
-				"filter":        a.Filter,
-				"total":         agg.Len(),
-				"returned":      len(convs),
-				"truncated":     a.TopN > 0 && agg.Len() > len(convs),
-				"conversations": convs,
-			}, nil
+					convs := agg.Result(a.SortBy, a.TopN)
+					return map[string]any{
+						"workspace_id":  ws.ID,
+						"transport":     a.Transport,
+						"filter":        a.Filter,
+						"total":         agg.Len(),
+						"returned":      len(convs),
+						"truncated":     a.TopN > 0 && agg.Len() > len(convs),
+						"conversations": convs,
+					}, nil
+				})
 		},
 	}
 }
@@ -159,6 +176,7 @@ type queryArgs struct {
 	Fields       []string `json:"fields"`
 	Limit        *int     `json:"limit"`
 	Format       string   `json:"format"`
+	Async        bool     `json:"async"`
 }
 
 // defaultQueryFields is a usable starting set for someone who has not decided
@@ -185,7 +203,8 @@ func (d *Deps) queryPackets() registration {
     "filter": {"type": "string", "description": "Wireshark display filter, e.g. \"tcp.flags.reset == 1 && ip.addr == 10.0.0.1\". Empty means every packet."},
     "fields": {"type": "array", "items": {"type": "string"}, "description": "Field names to extract, e.g. [\"frame.number\",\"ip.src\",\"http.host\"]. Defaults to a general-purpose set."},
     "limit": {"type": "integer", "description": "Maximum rows to return. Omit for the configured default; 0 means unlimited and always writes a file."},
-    "format": {"type": "string", "enum": ["jsonl", "csv"], "description": "Encoding of the output file. Default jsonl."}
+    "format": {"type": "string", "enum": ["jsonl", "csv"], "description": "Encoding of the output file. Default jsonl."},
+    "async": {"type": "boolean", "description": "Run in the background and return a job_id immediately. Use for large captures: a full pass takes minutes and would otherwise hit your request timeout. Poll with check_job."}
   },
   "required": ["workspace_id", "workspace_dir"],
   "additionalProperties": false
@@ -218,6 +237,22 @@ func (d *Deps) handleQueryPackets(ctx context.Context, raw json.RawMessage) (any
 		return nil, err
 	}
 
+	// Everything above is validation and runs synchronously even for an async
+	// call, so a mistake is reported now rather than as a failed job later.
+	return d.dispatch(ctx, a.Async, "query_packets",
+		func(runCtx context.Context, report func(job.Progress)) (any, error) {
+			return d.runQuery(runCtx, report, ws, a, fields, limit)
+		})
+}
+
+func (d *Deps) runQuery(
+	ctx context.Context,
+	report func(job.Progress),
+	ws *workspace.Workspace,
+	a queryArgs,
+	fields []string,
+	limit int,
+) (any, error) {
 	w := output.NewWriter(ws.OutDir(), nextResultName(ws.OutDir(), "query"), fields, output.Options{
 		InlineMaxBytes: d.Cfg.Output.InlineMaxBytes,
 		RowLimit:       limit,
@@ -226,6 +261,7 @@ func (d *Deps) handleQueryPackets(ctx context.Context, raw json.RawMessage) (any
 	})
 
 	var addErr error
+	rows := 0
 	cmd := tshark.QueryArgs(a.Filter, fields)
 	run, err := d.Podman.RunOnceStream(ctx, d.runOpts(ws, cmd), func(r io.Reader) error {
 		return tshark.ParseFields(r, func(row tshark.Row) bool {
@@ -233,6 +269,10 @@ func (d *Deps) handleQueryPackets(ctx context.Context, raw json.RawMessage) (any
 			if err != nil {
 				addErr = err
 				return false
+			}
+			rows++
+			if rows%10000 == 0 {
+				report(job.Progress{Phase: "reading", Rows: rows})
 			}
 			return ok
 		})
@@ -258,6 +298,8 @@ func (d *Deps) handleQueryPackets(ctx context.Context, raw json.RawMessage) (any
 	// the true total is exactly what the agent needs then, and nothing it
 	// needs otherwise.
 	if res.Truncated {
+		report(job.Progress{Phase: "counting", Rows: rows,
+			Note: "result was truncated; counting total filter matches"})
 		if n, err := d.countMatches(ctx, ws, a.Filter); err == nil {
 			output.SetMatched(&res, n)
 		} else {

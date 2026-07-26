@@ -10,10 +10,9 @@ network-less container; the capture is mounted **read-only and never copied**.
 Results come back inline when small and as JSONL files in the workspace when
 large.
 
-**Status: Phase 1 Tracks A–E complete — the read-only edition works.** `serve`
-registers nine tools and has been driven end to end against real podman. What
-is left is Track F (async jobs) and Track G (payload tools), so `follow_stream`
-and `extract_objects` do not exist yet.
+**Status: Phase 1 Tracks A–F complete.** `serve` registers ten tools, including
+async execution with `check_job`, all driven end to end against real podman.
+Only Track G is left, so `follow_stream` and `extract_objects` do not exist yet.
 
 ## Build / test
 
@@ -43,7 +42,7 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 | `internal/workspace/` | Workspace creation, `meta.json`, capinfos parsing, path validation | D ✅ |
 | `internal/tshark/` | tshark argument assembly and output parsing | E ✅ |
 | `internal/output/` | The output contract: byte threshold, `matched`, `sample`, JSONL | E ✅ |
-| `internal/job/` | Async jobs + `check_job` | F |
+| `internal/job/` | Async jobs + `check_job`, with a concurrency cap | F ✅ |
 | `internal/payload/` | Nonce XML isolation, defang | G |
 | `internal/tools/` | Tool handlers — 9 registered; payload tools land in G | E ✅, G |
 | `testdata/gen/` | gopacket fixture generators (synthetic captures only) | H |
@@ -60,12 +59,12 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 - **ADR-0006**: Async for heavy tools only (`create_workspace`, `protocol_hierarchy`, `list_conversations`, `query_packets`, `extract_objects`). Validation stays synchronous. Jobs are in-memory; `job_not_found` means "just re-run it".
 - **ADR-0007**: Payload safety, all four in the same commit as the payload code — nonce XML isolation with the framing **first**, defang to `<sha256>.bin` mode 0600, payload never logged, ranged reads via `offset`/`length`.
 
-## Tool surface (11 + get_usage)
+## Tool surface (10 registered, 12 planned)
 
 `get_usage` · `create_workspace` · `describe_workspace` · `list_workspaces` ·
 `delete_workspace` · `describe_runtime` · `protocol_hierarchy` ·
-`list_conversations` · `query_packets` · `follow_stream` · `extract_objects` ·
-`check_job`
+`list_conversations` · `query_packets` · `check_job` — plus `follow_stream` and
+`extract_objects`, still to come in Track G
 
 `describe_workspace` is the free one — it reads the `capinfos` cache and starts
 no container. Expect it to be the most-called tool.
@@ -83,6 +82,7 @@ no container. Expect it to be the most-called tool.
 - **`CountArgs` must emit a header row.** The same reader parses queries and the count pass; without `-E header=y` the first packet is eaten as column names and every `matched` is one short. There is a regression test.
 - **A row limit kills the container on purpose.** `StreamResult.Stopped` says so — treat a non-zero exit as tshark's fault only when `Stopped` is false, or every limited query reports a container failure.
 - **`rows` is a pointer.** An empty inline result must serialize as `[]`; under `omitempty` a plain slice vanishes and becomes indistinguishable from a file-backed result. `delivery` states the channel outright.
+- **Background jobs must not inherit the request context.** It is cancelled the moment the job id is returned; `Deps.ServerCtx` is what they run under.
 - **stdout is the protocol channel.** All logging goes to stderr; a stray `fmt.Println` corrupts the JSON-RPC stream.
 
 ## Conventions (organization-wide)

@@ -134,9 +134,9 @@ How long `capinfos` + SHA-256 take relative to pcap size. This is the basis for 
 
 Note that `capinfos` computes and reports the file's SHA-256 itself. That is an independent second path alongside the host-side Go computation, usable as a provenance cross-check.
 
-### Q5-4. Concurrency cap for async jobs
+### Q5-4. Concurrency cap for async jobs — **provisionally settled (Track F)**
 
-How many parallel `podman run` processes are acceptable, balanced against macOS Podman Machine memory (4GB default, 8GB recommended). (Track F)
+Exposed as `[jobs] max_concurrent`, **defaulting to 2**. Two concurrent full passes sit comfortably within a Podman Machine's memory (4GB default, 8GB recommended). This has not been measured against a large real capture, so it is a knob rather than a constant.
 
 ### Q5-5. How to enumerate `--export-objects` supported protocols — **Resolved (Track C)**
 

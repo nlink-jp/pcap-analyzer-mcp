@@ -117,7 +117,7 @@ Delete the directory. With `dry_run`, return only the target paths and disk usag
 
 ### 4.1 In-memory (inside the server process)
 
-- **Async jobs only** (`internal/job`), in-memory and non-persistent, lost on restart
+- **Async jobs only** (`internal/job`), in-memory and non-persistent, lost on restart. `[jobs] max_concurrent` caps simultaneous runs (default 2); a job waiting for a slot is visibly `queued`
 - No in-memory list or state of workspaces
 
 ### 4.2 On disk (persistent)
@@ -141,7 +141,7 @@ Delete the directory. With `dry_run`, return only the target paths and disk usag
 
 Tool errors are returned as `isError: true` plus structured JSON (`{code, message, details}`) in the content, not as JSON-RPC errors (ported from data-toolbox-mcp `internal/toolerr`).
 
-Proposed sentinel codes: `invalid_arguments` / `missing_argument` / `invalid_workspace_id` / `workspace_not_found` / `path_not_allowed` / `pcap_unreadable` / `invalid_display_filter` / `container_failed` / `tshark_failed` / `job_not_found` / `payload_unavailable_truncated_capture` / `object_too_large`
+Proposed sentinel codes: `invalid_arguments` / `missing_argument` / `invalid_workspace_id` / `workspace_not_found` / `path_not_allowed` / `pcap_unreadable` / `invalid_display_filter` / `container_failed` / `tshark_failed` / `job_not_found` / `analysis_failed` / `payload_unavailable_truncated_capture` / `object_too_large`
 
 ### 5.2 Self-repair hints
 

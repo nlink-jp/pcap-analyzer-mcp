@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/config"
+	"github.com/nlink-jp/pcap-analyzer-mcp/internal/job"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/mcpserver"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/podman"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/tools"
@@ -40,6 +41,10 @@ Transport is stdio only; HTTP/SSE is out of scope (architecture.md §8).`,
 			Cfg:       cfg,
 			Podman:    pc,
 			Workspace: workspace.NewManager(cfg, pc),
+			Jobs:      job.NewManager(cfg.Jobs.MaxConcurrent),
+			// Background jobs must outlive the request that started them, so
+			// they run under the command's context rather than a request one.
+			ServerCtx: cmd.Context(),
 		})
 
 		logger.Info("serving", "version", Version, "image", cfg.Container.Image)

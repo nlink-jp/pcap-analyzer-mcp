@@ -81,6 +81,9 @@ const (
 	// Async jobs. A job_not_found simply means "re-run the original tool":
 	// jobs are in-memory and results are idempotent (ADR-0006).
 	CodeJobNotFound = "job_not_found"
+	// CodeAnalysisFailed is the fallback for a background job that failed
+	// without producing a more specific code.
+	CodeAnalysisFailed = "analysis_failed"
 
 	// Payload tools (ADR-0007). A truncated capture has no payload to
 	// extract; that is an answer, not a transient failure, and saying so
