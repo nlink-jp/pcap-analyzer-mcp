@@ -11,10 +11,9 @@ runs a **version-pinned tshark inside a container**, mounts the capture
 workspace as JSONL — so an agent can narrow down a GB-scale capture step by
 step instead of drowning in its first response.
 
-> **Status: pre-release, feature-complete.** All twelve tools work and have
-> been driven end to end against a real container, payload extraction
-> included. Still to come before a release: a security review of the payload
-> path, and validation against a real MCP client.
+> **Status: v0.1.0.** Twelve tools, driven end to end against a real container
+> and validated from an MCP client. An independent security review has been
+> through the tree. See [known limitations](CHANGELOG.md#known-limitations).
 
 ## Why a container
 

@@ -10,10 +10,10 @@ network-less container; the capture is mounted **read-only and never copied**.
 Results come back inline when small and as JSONL files in the workspace when
 large.
 
-**Status: Phase 1 complete, Phase 2 under way.** All twelve tools work, an
-independent security review has been through the tree and its findings are
-fixed, and an eleven-stage E2E suite drives the real binary against real
-podman. What remains is validation from an actual MCP client.
+**Status: v0.1.0 released.** All twelve tools work; an independent security
+review and a real-MCP-client pass have both been through the tree and their
+findings are fixed. An eleven-stage E2E suite drives the real binary against
+real podman.
 
 ## Build / test
 
