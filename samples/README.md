@@ -114,10 +114,11 @@ Look at the file in `<workspace>/work/out/objects/`:
 - mode `0600`, never executable
 - its bytes were not returned to you
 
-The name tshark chose is in the manifest, framed as untrusted like any other
-wire content. On this sample tshark writes `object1.text%2fplain` — an
-attacker-influenced name carrying a URL-encoded slash, which is why nothing
-from the wire is allowed to become a path.
+The name tshark chose is in the manifest, with one framing statement covering
+all of them — a filename is a short string in a structure, not a free-text
+blob, so it does not need its own delimiters. On this sample tshark writes
+`object1.text%2fplain`: an attacker-influenced name carrying a URL-encoded
+slash, which is why nothing from the wire is allowed to become a path.
 
 ### 8. Try the truncated capture
 
@@ -126,12 +127,19 @@ create_workspace(pcap_path="$S/truncated.pcapng", ...)
 describe_workspace(...)   → truncated: true, plus an explanation
 follow_stream(...)        → payload_unavailable_truncated_capture
 extract_objects(...)      → payload_unavailable_truncated_capture
-query_packets(...)        → still works: matched 4
+query_packets(...)        → still works: matched 4, addresses and ports intact
+list_conversations(...)   → 0 conversations, and a note saying why
 ```
 
 The packets were cut short when this was recorded, so the payload bytes were
 never written. The server refuses **before** running anything and says which
 tools still work, so an empty result is not mistaken for a transient failure.
+
+`list_conversations` is the interesting one. A 40-byte snaplen cuts the TCP
+header, which is where the stream index lives — so it finds no conversations
+even though there are two. It says so rather than returning a bare empty list,
+because "no conversations" and "the index was cut off" are very different
+answers.
 
 ### 9. Run something in the background
 

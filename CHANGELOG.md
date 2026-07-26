@@ -45,6 +45,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on startup and written 0600. It was configurable but ignored before
 - `docs/{en,ja}/reference/client-setup.md`
 
+### Fixed (real-client validation)
+
+Found by driving the server from an actual MCP client rather than a harness.
+
+- **`list_conversations` returned an empty list on a truncated capture with no
+  explanation.** A snaplen small enough to cut the TCP header removes the stream
+  index the tool aggregates on, so a capture with two conversations reported
+  none — and the truncation guidance had explicitly promised this tool still
+  worked. It now reports how many packets lacked an index and why
+- **`extract_objects` wrapped every `source_name` individually**: ~250 bytes of
+  identical framing around a ~20-byte filename, which for a hundred objects is
+  25KB of the same sentence. Names are now framed once at the manifest level —
+  the byte-budget reasoning ADR-0007 already applies to field values
+- `get_usage` had drifted from the code: its async list omitted
+  `extract_objects`, and `suggested_flow` stopped before the payload tools, so
+  an agent following it would never discover them
+- A finished job reported `progress.rows: 0` alongside a result containing rows
+- The aggregator's doc claimed "A" is the initiator. It is whichever endpoint
+  appears first, which differs on a capture that starts mid-stream
+
 ### Security
 
 Findings from an independent review of the whole tree.

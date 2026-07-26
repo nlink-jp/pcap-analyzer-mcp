@@ -64,10 +64,13 @@ func usageDoc(inlineMaxBytes, defaultRowLimit int) map[string]any {
 			"3. protocol_hierarchy — what protocols are in here",
 			"4. list_conversations — who talked to whom, and the stream indices",
 			"5. query_packets — narrow down with a display filter",
+			"6. follow_stream — the actual bytes of one conversation, by stream index",
+			"7. extract_objects — recover the files a capture carried",
 		},
 		"async": []string{
-			"create_workspace, protocol_hierarchy, list_conversations and query_packets " +
-				"accept async: true. They return a job_id immediately; poll check_job.",
+			"create_workspace, protocol_hierarchy, list_conversations, query_packets and " +
+				"extract_objects accept async: true. They return a job_id immediately; " +
+				"poll check_job. follow_stream does not: it touches one stream.",
 			"Use it when the capture is large — a full pass takes minutes and a synchronous " +
 				"call would hit your request timeout. describe_workspace reports packet_count " +
 				"and file_size, which is what to decide on.",
@@ -99,7 +102,10 @@ func usageDoc(inlineMaxBytes, defaultRowLimit int) map[string]any {
 			"path_not_allowed":    "allowed_paths is configured and the capture is outside it.",
 			"container_failed":    "podman could not run. `pcap-analyzer-mcp doctor` diagnoses this.",
 			"payload_unavailable_truncated_capture": "The capture has no payload to extract. " +
-				"This is a property of the evidence; retrying will not change it.",
+				"This is a property of the evidence; retrying will not change it. Note that a " +
+				"snaplen small enough to cut the transport header also empties " +
+				"list_conversations, because the stream index lives there; query_packets " +
+				"still reports addresses and ports.",
 			"job_not_found": "Jobs live in memory and do not survive a server restart. " +
 				"Re-run the original tool — the capture is read-only, so the result is the same.",
 			"analysis_failed": "A background job failed without a more specific cause; " +

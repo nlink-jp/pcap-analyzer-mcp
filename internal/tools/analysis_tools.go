@@ -163,6 +163,25 @@ func (d *Deps) listConversations() registration {
 						"truncated":     a.TopN > 0 && agg.Len() > len(convs),
 						"conversations": convs,
 					}
+					// A capture whose snaplen cut the transport header yields
+					// packets with no stream index, and therefore no
+					// conversations at all. Returning [] without saying why
+					// reads as "nothing was talking", which is the opposite of
+					// the truth.
+					if len(convs) == 0 && agg.WithoutStream() > 0 {
+						out["packets_without_stream_index"] = agg.WithoutStream()
+						note := "Packets matched, but none carried a " + a.Transport +
+							" stream index, so no conversations could be built."
+						if ws.Meta.Info.Truncated {
+							note += " This capture is truncated"
+							if ws.Meta.Info.SnaplenInferredMax != nil {
+								note += fmt.Sprintf(" to %d bytes", *ws.Meta.Info.SnaplenInferredMax)
+							}
+							note += ", which cuts the transport header the index comes from. " +
+								"query_packets still reports addresses and ports."
+						}
+						out["note"] = note
+					}
 					if dropped := agg.Dropped(); dropped > 0 {
 						out["truncated"] = true
 						out["streams_dropped"] = dropped

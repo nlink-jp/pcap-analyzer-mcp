@@ -257,9 +257,17 @@ func TestStage7_ObjectsAreDefanged(t *testing.T) {
 	if perm := info.Mode().Perm(); perm != 0o600 {
 		t.Errorf("mode = %o, want 600", perm)
 	}
-	// The name tshark chose comes off the wire, so it is reported framed.
-	if src, _ := obj["source_name"].(string); !strings.Contains(src, "untrusted-payload") {
-		t.Errorf("source_name was not framed: %q", src)
+	// The name tshark chose comes off the wire. It is reported plainly and
+	// framed once at the manifest level — per-name framing cost ~250 bytes of
+	// identical preamble around a ~20-byte string.
+	manifest := out["manifest"].(map[string]any)
+	framing, _ := manifest["untrusted"].(string)
+	if !strings.Contains(framing, "chosen by whoever produced the traffic") {
+		t.Errorf("the manifest does not frame the names: %q", framing)
+	}
+	src, _ := obj["source_name"].(string)
+	if src == "" || strings.Contains(src, "untrusted-payload") {
+		t.Errorf("source_name should be the plain name, got %q", src)
 	}
 }
 

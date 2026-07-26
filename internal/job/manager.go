@@ -208,10 +208,31 @@ func (js *jobState) finish(res any, err error) {
 	js.state = StateDone
 	js.result = res
 	js.progress.Phase = "done"
+	// Progress is only reported every few thousand rows, so a job that
+	// finished quickly would otherwise end saying it produced none while its
+	// result plainly holds some.
+	if n, ok := returnedRows(res); ok {
+		js.progress.Rows = n
+	}
 }
 
 // Get returns the status of a job, or a job_not_found error carrying the
 // recovery instruction.
+// returnedRows finds the row count in a finished result, so the final
+// progress agrees with what came back.
+func returnedRows(res any) (int, bool) {
+	type returner interface{ RowsReturned() int }
+	if r, ok := res.(returner); ok {
+		return r.RowsReturned(), true
+	}
+	if m, ok := res.(map[string]any); ok {
+		if n, ok := m["returned"].(int); ok {
+			return n, true
+		}
+	}
+	return 0, false
+}
+
 func (m *Manager) Get(jobID string) (Status, error) {
 	m.mu.Lock()
 	js, ok := m.jobs[jobID]

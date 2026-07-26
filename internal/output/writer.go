@@ -71,6 +71,10 @@ type Result struct {
 	Format string `json:"format,omitempty"`
 }
 
+// RowsReturned lets the job manager finish a job with a progress count that
+// agrees with the result, rather than the last multiple it happened to report.
+func (r Result) RowsReturned() int { return r.Returned }
+
 // Options configures a Writer.
 type Options struct {
 	// InlineMaxBytes is the serialized-byte budget for an inline result.

@@ -156,8 +156,12 @@ type Conversation struct {
 
 // ConversationAggregator folds per-packet rows into conversations.
 //
-// "A" is whichever endpoint sent the first packet of the stream, matching how
-// an analyst reads a conversation: the side that initiated it.
+// "A" is whichever endpoint appears first in the capture for that stream. On a
+// capture that includes the handshake that is the initiator, which is how an
+// analyst reads a conversation — but it is not guaranteed: a capture that
+// starts mid-stream, or one merged from sources sharing a timestamp, can put
+// the responder first. The field names say A and B rather than client and
+// server for exactly that reason.
 type ConversationAggregator struct {
 	transport string
 	byStream  map[int64]*Conversation
@@ -169,6 +173,12 @@ type ConversationAggregator struct {
 	// without limit.
 	maxStreams int
 	dropped    int64
+
+	// seen and withoutStream separate "no packets matched" from "packets
+	// matched but carried no stream index" — the second happens on a capture
+	// whose snaplen cut the TCP header, and looks identical otherwise.
+	seen          int64
+	withoutStream int64
 }
 
 // NewConversationAggregator returns an aggregator for "tcp" or "udp",
@@ -184,13 +194,16 @@ func NewConversationAggregator(transport string, maxStreams int) *ConversationAg
 
 // Add folds one packet row in.
 func (a *ConversationAggregator) Add(row Row) {
+	a.seen++
 	streamField := a.transport + ".stream"
 	raw, ok := row[streamField]
 	if !ok || raw == "" {
+		a.withoutStream++
 		return
 	}
 	stream, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil {
+		a.withoutStream++
 		return
 	}
 
@@ -280,6 +293,13 @@ func (a *ConversationAggregator) Len() int { return len(a.byStream) }
 // Dropped reports how many packets belonged to streams beyond the cap. A
 // non-zero value means the conversation list is incomplete.
 func (a *ConversationAggregator) Dropped() int64 { return a.dropped }
+
+// Seen reports how many rows were folded in, and WithoutStream how many of
+// them carried no stream index. Both non-zero with no conversations produced
+// means the capture is truncated past the transport header — an empty list
+// there would otherwise read as "nothing was talking".
+func (a *ConversationAggregator) Seen() int64          { return a.seen }
+func (a *ConversationAggregator) WithoutStream() int64 { return a.withoutStream }
 
 func firstNonEmpty(vals ...string) string {
 	for _, v := range vals {

@@ -192,9 +192,11 @@ func TestDefangStripsTheExecutableBit(t *testing.T) {
 	}
 }
 
-// The original name is evidence, so it is reported — but as untrusted content,
-// because it is a string an attacker chose.
-func TestDefangKeepsTheOriginalNameAsUntrusted(t *testing.T) {
+// The original name is evidence, so it is reported — framed once at the
+// manifest level rather than individually. Wrapping each name cost ~250 bytes
+// of identical preamble around a ~20-byte filename, which is the same
+// byte-budget problem ADR-0007 avoids for field values.
+func TestDefangReportsTheOriginalNameFramedOnce(t *testing.T) {
 	raw, store := t.TempDir(), t.TempDir()
 	writeFile(t, raw+"/evil-name.bin", "x")
 
@@ -202,11 +204,15 @@ func TestDefangKeepsTheOriginalNameAsUntrusted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.Objects[0].SourceName.Reveal() != "evil-name.bin" {
-		t.Errorf("source name = %q", m.Objects[0].SourceName.Reveal())
+	if m.Objects[0].SourceName != "evil-name.bin" {
+		t.Errorf("source name = %q", m.Objects[0].SourceName)
 	}
-	if strings.Contains(fmt.Sprint(m.Objects[0].SourceName), "evil-name") {
-		t.Error("the source name must redact when formatted, like any other payload")
+	if !strings.Contains(m.Untrusted, "chosen by whoever produced the traffic") {
+		t.Errorf("the manifest must frame the names once: %q", m.Untrusted)
+	}
+	// The framing must not be repeated per object.
+	if strings.Contains(m.Objects[0].SourceName, "untrusted") {
+		t.Error("names should not carry their own preamble")
 	}
 }
 
@@ -219,6 +225,9 @@ func TestDefangRecordsWhatItSkipped(t *testing.T) {
 	m, err := Defang("http", raw, store, Limits{MaxObjectBytes: 100})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if m.Skipped[0].SourceName != "huge.bin" {
+		t.Errorf("skipped name = %q", m.Skipped[0].SourceName)
 	}
 	if len(m.Objects) != 1 {
 		t.Errorf("kept %d objects, want 1", len(m.Objects))
