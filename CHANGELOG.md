@@ -35,6 +35,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   errors and formatting; framing emitted ahead of the content), object defang
   to `<sha256>.bin` at mode 0600, and ranged reads windowed per direction
 
+### Fixed
+
+- `follow_stream` no longer buffers a whole stream before windowing it; parsing
+  is streamed and bounded by `[payload] follow_max_reassembly_bytes`
+- `follow_stream` clamps `length` to `[payload] follow_max_window_bytes`; it was
+  previously unbounded
+- `extract_objects` writes `manifest-<protocol>.json`, so extracting a second
+  protocol no longer overwrites the first manifest
+
 ### Changed
 
 - Release archives are 4 platforms, not 5: darwin ships arm64 only per

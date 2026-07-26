@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-26
 - Driver: magi
-- Revisions: 2026-07-26 — how "never logged" is enforced was made concrete during Track G
+- Revisions: 2026-07-26 — how "never logged" is enforced was made concrete during Track G; the ranged-read section was rewritten after a self-review found three gaps
 - Generalises to: candidate org ADR (`.github/adr/`) — applies to every tool that returns attacker-controlled content to an agent
 
 ---
@@ -66,9 +66,15 @@ Strictly, this is "redacted by default, with an explicit and searchable escape" 
 
 ### 4. Ranged reads
 
-`follow_stream` takes `offset` / `length`. The default inline cap is `[payload] follow_inline_max_bytes` (default 8192). When the whole stream is needed it goes to a file per the ADR-0005 contract, and the agent reads only the range it needs.
+`follow_stream` takes `offset` / `length`. The default window is `[payload] follow_inline_max_bytes` (default 8192).
 
-Output is returned as direction-separated chunks (client→server / server→client) in a structured form, so the agent never parses tshark's `follow` formatting.
+Output is returned as direction-separated chunks (client→server / server→client) in a structured form, so the agent never parses tshark's `follow` formatting. **Each direction windows independently** — they are separate byte streams, and one offset into their concatenation would be meaningless.
+
+**Gaps found by self-review (amended 2026-07-26)**: the above did not actually address threat 4.
+
+1. **`length` had no ceiling.** `length: 100000000` would return 100MB inline. It is now clamped by `[payload] follow_max_window_bytes` (default 1MiB), with `length_clamped_to` reported back.
+2. **The ranged read protected the response, not the server.** tshark's output was buffered whole before the window was cut, so a 2GB stream reached memory as its 4GB hex rendering and was then discarded. Parsing is now streamed and bounded by `[payload] follow_max_reassembly_bytes` (default 64MiB); when the bound is hit, `reassembly_truncated` says so and states that offsets beyond it cannot be served.
+3. The original text promised a file fallback for whole streams; it was never implemented. Ranged reads plus the reassembly budget meet the need, so **there is no file fallback** — a large transfer is `extract_objects`' job.
 
 ## Consequences
 

@@ -43,8 +43,13 @@ max_concurrent = 2
 
 [payload]
 # Payload-returning tools are bounded separately (ADR-0007).
-follow_inline_max_bytes = 8192
-extract_max_object_bytes = 104857600  # 100 MiB
+follow_inline_max_bytes = 8192          # default window for follow_stream
+follow_max_window_bytes = 1048576       # largest window a caller may request
+# How much of a stream is held in memory while locating the window. A ranged
+# read is no protection if the whole transfer has already been read in to serve
+# it, so this is the bound that actually matters.
+follow_max_reassembly_bytes = 67108864  # 64 MiB
+extract_max_object_bytes = 104857600    # 100 MiB
 
 [log]
 level = "info"          # debug | info | warn | error

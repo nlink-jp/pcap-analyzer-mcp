@@ -75,7 +75,17 @@ type Jobs struct {
 
 // Payload bounds the payload-returning tools (ADR-0007).
 type Payload struct {
-	FollowInlineMaxBytes  int   `toml:"follow_inline_max_bytes"`
+	// FollowInlineMaxBytes is the default window size for follow_stream.
+	FollowInlineMaxBytes int `toml:"follow_inline_max_bytes"`
+	// FollowMaxWindowBytes is the largest window a caller may ask for. Without
+	// a ceiling, `length: 100000000` would return 100MB inline.
+	FollowMaxWindowBytes int `toml:"follow_max_window_bytes"`
+	// FollowMaxReassemblyBytes bounds how much of a stream is held in memory
+	// while looking for the window. A single TCP stream can be a multi-gigabyte
+	// transfer, and a ranged read is no protection if the whole thing has
+	// already been read in to serve it (ADR-0007 threat 4).
+	FollowMaxReassemblyBytes int `toml:"follow_max_reassembly_bytes"`
+
 	ExtractMaxObjectBytes int64 `toml:"extract_max_object_bytes"`
 }
 
@@ -109,8 +119,10 @@ func Default() Config {
 			MaxConcurrent: 2,
 		},
 		Payload: Payload{
-			FollowInlineMaxBytes:  8192,
-			ExtractMaxObjectBytes: 100 << 20, // 100 MiB
+			FollowInlineMaxBytes:     8192,
+			FollowMaxWindowBytes:     1 << 20,  // 1 MiB
+			FollowMaxReassemblyBytes: 64 << 20, // 64 MiB
+			ExtractMaxObjectBytes:    100 << 20,
 		},
 		Log: Log{
 			Level: "info",
@@ -189,6 +201,14 @@ func (c *Config) Validate() error {
 	if c.Payload.FollowInlineMaxBytes <= 0 {
 		return fmt.Errorf("payload.follow_inline_max_bytes must be positive, got %d",
 			c.Payload.FollowInlineMaxBytes)
+	}
+	if c.Payload.FollowMaxWindowBytes < c.Payload.FollowInlineMaxBytes {
+		return fmt.Errorf("payload.follow_max_window_bytes (%d) must be at least follow_inline_max_bytes (%d)",
+			c.Payload.FollowMaxWindowBytes, c.Payload.FollowInlineMaxBytes)
+	}
+	if c.Payload.FollowMaxReassemblyBytes < c.Payload.FollowMaxWindowBytes {
+		return fmt.Errorf("payload.follow_max_reassembly_bytes (%d) must be at least follow_max_window_bytes (%d)",
+			c.Payload.FollowMaxReassemblyBytes, c.Payload.FollowMaxWindowBytes)
 	}
 	if c.Payload.ExtractMaxObjectBytes <= 0 {
 		return fmt.Errorf("payload.extract_max_object_bytes must be positive, got %d",

@@ -3,8 +3,10 @@ package tools
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/job"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/mcpserver"
@@ -101,6 +103,13 @@ func (d *Deps) handleFollowStream(ctx context.Context, raw json.RawMessage) (any
 	if length == 0 {
 		length = d.Cfg.Payload.FollowInlineMaxBytes
 	}
+	// A window has to have a ceiling. Without one, `length: 100000000` returns
+	// 100MB inline and burns the caller's context along with our memory.
+	clamped := false
+	if length > d.Cfg.Payload.FollowMaxWindowBytes {
+		length = d.Cfg.Payload.FollowMaxWindowBytes
+		clamped = true
+	}
 
 	ws, err := d.loadWorkspace(a.WorkspaceID, a.WorkspaceDir)
 	if err != nil {
@@ -110,21 +119,46 @@ func (d *Deps) handleFollowStream(ctx context.Context, raw json.RawMessage) (any
 		return nil, err
 	}
 
+	// Streamed with a budget rather than buffered: a single stream can be a
+	// multi-gigabyte transfer, and windowing after the fact would not stop it
+	// reaching memory (ADR-0007 threat 4).
+	budget := d.Cfg.Payload.FollowMaxReassemblyBytes
+	var follow *tshark.FollowResult
+	var overBudget bool
 	cmd := tshark.FollowArgs(a.Protocol, *a.Stream)
-	res, err := d.Podman.RunOnce(ctx, d.runOpts(ws, cmd))
+
+	run, err := d.Podman.RunOnceStream(ctx, d.runOpts(ws, cmd), func(r io.Reader) error {
+		var perr error
+		follow, overBudget, perr = tshark.ParseFollowStream(a.Protocol, *a.Stream, r, budget)
+		return perr
+	})
 	if err != nil {
 		return nil, toolerr.Newf(toolerr.CodeContainerFailed, "%v", err)
 	}
-	if res.ExitCode != 0 {
-		return nil, tshark.ClassifyError(res.ExitCode, string(res.Stderr))
+	if !run.Stopped && run.ExitCode != 0 {
+		return nil, tshark.ClassifyError(run.ExitCode, string(run.Stderr))
+	}
+	if follow == nil {
+		return nil, toolerr.New(toolerr.CodeTsharkFailed, "no follow output")
 	}
 
-	follow, err := tshark.ParseFollow(a.Protocol, *a.Stream, string(res.Stdout))
-	if err != nil {
-		return nil, toolerr.Newf(toolerr.CodeTsharkFailed, "%v", err)
+	out := buildFollowResponse(ws.ID, follow, a.Offset, length)
+	if clamped {
+		out["length_clamped_to"] = length
 	}
-	return buildFollowResponse(ws.ID, follow, a.Offset, length), nil
+	if overBudget {
+		out["reassembly_truncated"] = true
+		out["reassembly_limit_bytes"] = budget
+		out["reassembly_note"] = "This stream is larger than the reassembly budget, so only " +
+			"its first " + itoa(budget) + " bytes were read. total_bytes reflects what was " +
+			"read, not the whole stream, and offsets beyond the budget cannot be served. " +
+			"Use extract_objects for a large transfer, or raise " +
+			"[payload] follow_max_reassembly_bytes."
+	}
+	return out, nil
 }
+
+func itoa(n int) string { return strconv.Itoa(n) }
 
 // followWindow is one direction's slice of the stream.
 type followWindow struct {
@@ -321,18 +355,21 @@ func (d *Deps) runExtract(ctx context.Context, ws *workspace.Workspace, protocol
 	if len(manifest.Objects) == 0 && len(manifest.Skipped) == 0 {
 		out["note"] = "No " + protocol + " objects in this capture. That is an answer, not a failure."
 	}
-	if err := writeManifest(ws.ObjectsDir(), manifest); err == nil {
-		out["manifest_file"] = filepath.Join(ws.ObjectsDir(), "manifest.json")
+	// One manifest per protocol: extracting smb after http must not overwrite
+	// the http record.
+	name := "manifest-" + protocol + ".json"
+	if err := writeManifest(ws.ObjectsDir(), name, manifest); err == nil {
+		out["manifest_file"] = filepath.Join(ws.ObjectsDir(), name)
 	}
 	return out, nil
 }
 
-func writeManifest(dir string, m *payload.Manifest) error {
+func writeManifest(dir, name string, m *payload.Manifest) error {
 	b, err := json.MarshalIndent(m, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "manifest.json"), append(b, '\n'), 0o600)
+	return os.WriteFile(filepath.Join(dir, name), append(b, '\n'), 0o600)
 }
 
 func supportedObjectProtocol(p string) bool {

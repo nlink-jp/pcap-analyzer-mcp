@@ -1,11 +1,17 @@
 package tshark
 
 import (
+	"bufio"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 )
+
+// maxFollowLineBytes bounds one hex line. tshark emits a contiguous run of
+// bytes as a single line, so this also bounds a single chunk.
+const maxFollowLineBytes = 64 * 1024 * 1024
 
 // FollowArgs builds the argv that reassembles one stream.
 //
@@ -42,16 +48,37 @@ type FollowResult struct {
 	TotalBytes int `json:"total_bytes"`
 }
 
-// ParseFollow parses `-z follow,<proto>,raw,<n>` output.
+// ParseFollow parses `-z follow,<proto>,raw,<n>` output held in memory.
 //
-// The format is a banner, two Node lines, then one hex line per contiguous
-// run of bytes. Direction is carried by indentation and nothing else: a line
-// with a leading tab came from Node 1, an unindented line from Node 0.
+// Prefer ParseFollowStream for real captures: a single stream can be a
+// multi-gigabyte transfer, and its hex rendering is twice that again.
 func ParseFollow(protocol string, stream int64, out string) (*FollowResult, error) {
+	res, _, err := ParseFollowStream(protocol, stream, strings.NewReader(out), 0)
+	return res, err
+}
+
+// ParseFollowStream parses `-z follow,<proto>,raw,<n>` output as it arrives,
+// accumulating at most budget decoded bytes.
+//
+// The budget is what keeps a large transfer from being pulled into memory
+// whole — the threat ADR-0007 names but that a buffered read would not
+// actually address, since the windowing happens after the bytes have already
+// landed. A budget of 0 means unbounded and is only for tests.
+//
+// The format is a banner, two Node lines, then one hex line per contiguous run
+// of bytes. Direction is carried by indentation and nothing else: a line with
+// a leading tab came from Node 1, an unindented line from Node 0.
+func ParseFollowStream(protocol string, stream int64, r io.Reader, budget int) (*FollowResult, bool, error) {
 	res := &FollowResult{Protocol: protocol, Stream: stream}
 	offsets := map[string]int{}
+	truncated := false
 
-	for _, line := range strings.Split(out, "\n") {
+	sc := bufio.NewScanner(r)
+	// A single contiguous run is one line of hex, so lines are long.
+	sc.Buffer(make([]byte, 0, 64*1024), maxFollowLineBytes)
+
+	for sc.Scan() {
+		line := sc.Text()
 		trimmed := strings.TrimSpace(line)
 		switch {
 		case trimmed == "" || strings.HasPrefix(trimmed, "="):
@@ -73,6 +100,18 @@ func ParseFollow(protocol string, stream int64, out string) (*FollowResult, erro
 			continue
 		}
 
+		if budget > 0 && res.TotalBytes+len(data) > budget {
+			// Keep the part that fits so a window near the budget still has
+			// data, then stop reading rather than growing without limit.
+			if keep := budget - res.TotalBytes; keep > 0 {
+				data = data[:keep]
+			} else {
+				truncated = true
+				break
+			}
+			truncated = true
+		}
+
 		from, to := res.NodeA, res.NodeB
 		if fromB {
 			from, to = res.NodeB, res.NodeA
@@ -86,8 +125,15 @@ func ParseFollow(protocol string, stream int64, out string) (*FollowResult, erro
 		})
 		offsets[from] += len(data)
 		res.TotalBytes += len(data)
+
+		if truncated {
+			break
+		}
 	}
-	return res, nil
+	if err := sc.Err(); err != nil {
+		return nil, truncated, fmt.Errorf("read follow output: %w", err)
+	}
+	return res, truncated, nil
 }
 
 // StreamFromRow extracts a stream index from a field row, for callers that

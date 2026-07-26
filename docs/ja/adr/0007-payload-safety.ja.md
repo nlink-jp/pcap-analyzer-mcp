@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-26
 - Driver: magi
-- Revisions: 2026-07-26 — Track G の実装を受けて「ログに書かない」の担保方法を具体化
+- Revisions: 2026-07-26 — Track G の実装を受けて「ログに書かない」の担保方法を具体化 / 自己レビューで見つかった3件を受けてレンジ読みの節を改訂
 - Generalises to: 組織 ADR 候補（`.github/adr/`）— 攻撃者制御下のコンテンツをエージェントに返す全ツールに適用できる
 
 ---
@@ -66,9 +66,15 @@
 
 ### 4. レンジ読み
 
-`follow_stream` に `offset` / `length` を設ける。既定のインライン上限は `[payload] follow_inline_max_bytes`（既定 8192）。全体が必要な場合は ADR-0005 の契約どおりファイルに落とし、エージェントは必要な範囲だけを読む。
+`follow_stream` に `offset` / `length` を設ける。既定のインライン上限は `[payload] follow_inline_max_bytes`（既定 8192）。
 
-方向（client→server / server→client）ごとにチャンクを分けた構造化形式で返し、tshark の `follow` 出力の整形をエージェントにパースさせない。
+方向（client→server / server→client）ごとにチャンクを分けた構造化形式で返し、tshark の `follow` 出力の整形をエージェントにパースさせない。**窓も方向ごとに独立**させる — 2 方向は別々のバイトストリームなので、連結したものへの単一オフセットは意味を成さない。
+
+**自己レビューで判明した不足（2026-07-26 改定）**: 上記だけでは脅威 4 に対処できていなかった。
+
+1. **`length` に上限が無かった。** `length: 100000000` を渡せば 100MB がインラインで返る。`[payload] follow_max_window_bytes`（既定 1MiB）で頭打ちにし、切り詰めたことを `length_clamped_to` で返す
+2. **レンジ読みはサーバーのメモリを守っていなかった。** tshark の出力を一括バッファしてから窓を切っていたため、2GB のストリームはその hex 表現（4GB）ごとメモリに載ってから捨てられていた。**窓は応答を守るだけで、サーバーは守らない。** ストリーミング解析に変更し、`[payload] follow_max_reassembly_bytes`（既定 64MiB）で読み込み量そのものを打ち切る。打ち切った場合は `reassembly_truncated` と、その先のオフセットが取得できないことを明示する
+3. 当初「全体が必要な場合はファイルに落とす」と書いていたが実装しなかった。レンジ読みと再構成予算があれば目的は満たされるため、**ファイル出力は行わない**方針に改める（大きな転送は `extract_objects` の担当）
 
 ## Consequences
 
