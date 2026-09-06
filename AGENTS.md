@@ -19,6 +19,7 @@ real podman.
 
 - `make build` — never `go build` directly (writes to `dist/`, injects the version)
 - `make test` — all Go unit tests
+- `make test-linux` — the same suite inside a Linux container (podman/docker)
 - `go test -tags integration ./internal/workspace/` — drives real podman and the analysis image (needs `make runtime-image` first)
 - `go test -tags e2e ./e2e/` — drives the built binary over stdio as an MCP client would; the same eleven stages as `samples/README.md`
 - `./samples/generate.sh` — regenerate the sample captures
