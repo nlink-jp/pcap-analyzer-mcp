@@ -291,3 +291,26 @@ func TestLiveJobsAreCapped(t *testing.T) {
 		t.Error("submitting past the live-job ceiling must be refused")
 	}
 }
+
+// A cancelled context must beat a free slot. Both cases of the select that
+// waits for a slot can be ready at once, and Go picks uniformly among ready
+// cases — so without an explicit re-check the job starts about half the time.
+// During shutdown that is one new podman run per queued job.
+func TestCancelledContextNeverStartsEvenWithAFreeSlot(t *testing.T) {
+	m := NewManager(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	// One submission proves nothing against a coin flip; 100 make the old
+	// behaviour a certainty to catch.
+	for i := 0; i < 100; i++ {
+		id := mustSubmit(t, m, ctx, "x", func(context.Context, func(Progress)) (any, error) {
+			t.Error("a job whose context was already cancelled must never run")
+			return nil, nil
+		})
+		st := waitFor(t, m, id, StateFailed)
+		if st.Error == nil || !strings.Contains(st.Error.Message, "shut down") {
+			t.Fatalf("Error = %+v", st.Error)
+		}
+	}
+}

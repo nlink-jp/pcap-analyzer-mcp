@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **A job no longer starts while the server is shutting down.** A queued job
+  waits on a `select` between "a slot freed" and "the context was cancelled";
+  when both are ready Go picks uniformly at random, so shutdown started roughly
+  half the jobs it should have abandoned — each one a fresh `podman run`
+  (ADR-0002). The context is now re-checked after the slot is won and before
+  the job begins.
+
 ## [0.1.2] - 2026-07-26
 
 ### Fixed

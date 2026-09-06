@@ -130,16 +130,34 @@ func (m *Manager) Submit(ctx context.Context, tool string, run RunFunc) (string,
 		select {
 		case m.slots <- struct{}{}:
 		case <-ctx.Done():
-			js.finish(nil, toolerr.New(toolerr.CodeAnalysisFailed, "server shut down before the job started"))
+			js.finish(nil, errShutdownBeforeStart())
 			return
 		}
 		defer func() { <-m.slots }()
+
+		// A free slot and a cancelled context can be ready in the same
+		// instant, and select picks uniformly among ready cases — so winning
+		// the slot above is not evidence the server is still running. Without
+		// this re-check, shutdown starts roughly half the jobs it should have
+		// abandoned, and each one is a fresh podman run (ADR-0002).
+		select {
+		case <-ctx.Done():
+			js.finish(nil, errShutdownBeforeStart())
+			return
+		default:
+		}
 
 		js.begin()
 		res, err := runGuarded(ctx, run, js.report)
 		js.finish(res, err)
 	}()
 	return id, nil
+}
+
+// errShutdownBeforeStart is the failure recorded for a job that never ran
+// because the server was already shutting down when its turn came.
+func errShutdownBeforeStart() *toolerr.Error {
+	return toolerr.New(toolerr.CodeAnalysisFailed, "server shut down before the job started")
 }
 
 // liveLocked counts jobs not yet finished. Caller holds m.mu.
