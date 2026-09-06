@@ -214,11 +214,16 @@ func TestShutdownBeforeStart(t *testing.T) {
 	blocker := make(chan struct{})
 	defer close(blocker)
 
-	// Occupy the only slot.
-	mustSubmit(t, m, context.Background(), "x", func(context.Context, func(Progress)) (any, error) {
+	// Occupy the only slot. Submit returns before its goroutine has taken
+	// the slot, so wait until the job is actually running: otherwise the
+	// job below can win the slot and run to completion before cancel() is
+	// ever called — the exact outcome this test exists to rule out.
+	// TestQueuedStateIsVisible synchronises the same way.
+	occupier := mustSubmit(t, m, context.Background(), "x", func(context.Context, func(Progress)) (any, error) {
 		<-blocker
 		return nil, nil
 	})
+	waitFor(t, m, occupier, StateRunning)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	id := mustSubmit(t, m, ctx, "x", func(context.Context, func(Progress)) (any, error) {
