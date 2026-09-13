@@ -24,7 +24,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/mcpserver"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/toolerr"
@@ -34,12 +33,21 @@ import (
 // to name the session work directory.
 const MetaKey = "jp.nlink/work_dir"
 
-// Access mode bits for syscall.Access. Creating a workspace under the work
-// directory needs both: write to add an entry, execute to traverse it.
-const (
-	wOK = 0x02
-	xOK = 0x01
-)
+// writable reports whether this process can create an entry in dir.
+//
+// The test is a create-and-remove rather than an access(2) call: syscall.Access
+// does not exist on Windows, and these servers cross-compile there. Doing what
+// the server is about to do anyway is also the more honest check — an access
+// bit can say yes on a filesystem that then refuses the write.
+func writable(dir string) error {
+	f, err := os.CreateTemp(dir, ".work_dir-check-*")
+	if err != nil {
+		return err
+	}
+	name := f.Name()
+	_ = f.Close()
+	return os.Remove(name)
+}
 
 // deniedTrees are locations a work directory may never be, together with
 // everything under them: this server would be writing there on behalf of a
@@ -144,7 +152,7 @@ func (r Resolver) Validate(dir string) (string, error) {
 		return "", toolerr.Newf(toolerr.CodeWorkDirDenied, "work_dir %q is refused: %s", dir, why).
 			WithDetails(map[string]any{"work_dir": dir, "resolved": resolved})
 	}
-	if err := syscall.Access(resolved, wOK|xOK); err != nil {
+	if err := writable(resolved); err != nil {
 		return "", toolerr.Newf(toolerr.CodeWorkDirNotWritable,
 			"work_dir %q is not writable by this server", dir)
 	}
