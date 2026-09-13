@@ -264,8 +264,10 @@ query_packets(filter: "tcp.analysis.flags",
   全 SMB パケットを引いたら 6 万文字を超えた
 - **フィールド名を間違えると `invalid_arguments` が返り、`details.invalid_fields` に
   どれが悪いかが入る。** 推測で直さずそこを見る
-- **`limit: 0` で全件を JSONL に落とせる。** SQL をかけたいときは data-toolbox-mcp へ
-  渡す（[クライアント設定](client-setup.ja.md)参照）
+- **`limit: 0` は行数上限を外すだけ**で、バイト上限だけが残る（ファイルは書かない。
+  ADR-0009）。上限が落とした分は `truncated` / `omitted_rows` に出て、`matched` は常に
+  正確。SQL をかけたいときは行を自分で保存して data-toolbox-mcp に渡す
+  （[クライアント設定](client-setup.ja.md)参照）
 - **大きいキャプチャには `async: true`。** 判断材料は `describe_workspace` の
   `packet_count` と `file_size`。サーバーはリクエストを直列処理するので、長い同期呼び出しは
   他をブロックする
@@ -299,7 +301,7 @@ query_packets(filter: "tcp.analysis.flags",
 | `matched: 0` なのに存在するはず | プロトコル世代違い（`smb.` と `smb2.`）。`protocol_hierarchy` で確認 |
 | `matched` は 0 でないのに全フィールドが空 | 型付きフィールドが埋まらないケース。`_ws.col.Info` を足す |
 | `dcerpc.opnum` が数字のまま名前にならない | BIND がキャプチャに含まれていない。opnum から操作名を断定しない |
-| 結果が大きすぎて扱えない | `fields` を減らす。フィルタを強める。`limit: 0` でファイルに落とす |
+| 結果が大きすぎて扱えない | `fields` を減らす。フィルタを強める。`limit` を下げる（`omitted_rows` に見えていない分が出る） |
 | `invalid_arguments` | `details.invalid_fields` を見る |
 | `skipped` に `operation not permitted` が入る | ホストの AV が隔離した。呼び出し自体は成功で、他のオブジェクトは返る。[実地ノート](field-notes.ja.md) |
 | `ftp-data` で `.exe` が取れない | tshark の制約。`skipped` が空なら AV ではなく dissector が生成していない証拠。制御チャネルのクエリで代替 |

@@ -127,13 +127,17 @@ the protocol.
 
 ## Using it with data-toolbox-mcp
 
-`query_packets` with `limit: 0` writes every matching packet to the workspace
-as JSONL, which DuckDB reads natively. To run SQL over it, register
-[data-toolbox-mcp](https://github.com/nlink-jp/data-toolbox-mcp) as well and
-add your work directory to its `allowed_paths`.
+This server no longer writes result files (ADR-0009): rows come back in the
+response, bounded by `limit` and `max_bytes`, and what the bounds leave out is
+counted. To run SQL over a set of packets, save the rows yourself into your
+`work_dir` — one JSONL line per row, which DuckDB reads natively — then hand
+that path to [data-toolbox-mcp](https://github.com/nlink-jp/data-toolbox-mcp)'s
+`load_data`. It needs no allowlist entry: it reads any file you can read, minus
+a fixed credential blacklist.
 
-Filter before exporting: data-toolbox's `load_data` copies the file it is
-given, so handing it an unfiltered export of a large capture copies the lot.
+Filter before exporting: `load_data` copies the file it is given, so an
+unfiltered export of a large capture copies the lot. Narrow with a display
+filter first, and let `matched` tell you how much you are actually asking for.
 
 ## See also
 

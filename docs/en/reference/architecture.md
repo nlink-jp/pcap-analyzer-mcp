@@ -127,8 +127,8 @@ Delete the directory. With `dry_run`, return only the target paths and disk usag
 ├── meta.json     # pcap path / sha256 / capinfos / tshark version / image digest
 └── work/
     ├── tmp/            # tshark TMPDIR
-    ├── out/            # query results (JSONL/CSV)
     └── out/objects/    # extracted objects (untrusted, 0600, <sha256>.bin)
+                        # — query results are returned in the response, not written (ADR-0009)
 ```
 
 ### 4.3 In-memory ⇄ disk sync

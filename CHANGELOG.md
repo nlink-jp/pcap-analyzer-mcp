@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   byte bound, and the workspace holds only extracted objects.
 - The RFP's headline contract and two ADR index rows are annotated with the
   revisions that overtook them, instead of reading as current.
+- **The reference docs still taught the removed file export**: the client-setup
+  handoff told the reader to pass `limit: 0` to write JSONL and to add the work
+  directory to data-toolbox's `allowed_paths` (a key that no longer loads), the
+  tips said `limit: 0` exports everything as a file, and the workspace tree in
+  the architecture document still showed `out/` holding query results. They
+  describe what happens now, in both languages.
 
 ### Added
 

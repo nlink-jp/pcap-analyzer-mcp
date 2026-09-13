@@ -127,8 +127,8 @@
 ├── meta.json     # pcap パス / sha256 / capinfos / tshark 版数 / image digest
 └── work/
     ├── tmp/            # tshark の TMPDIR
-    ├── out/            # クエリ結果 (JSONL/CSV)
     └── out/objects/    # 抽出オブジェクト（untrusted, 0600, <sha256>.bin）
+                        # — クエリ結果はレスポンスで返し、書き出さない (ADR-0009)
 ```
 
 ### 4.3 in-memory ⇄ disk sync

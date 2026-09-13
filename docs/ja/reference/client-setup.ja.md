@@ -123,13 +123,17 @@ stdout には絶対にログを出さないでください。そこは JSON-RPC 
 
 ## data-toolbox-mcp との併用
 
-`query_packets` に `limit: 0` を渡すと、該当パケット全件をワークスペースへ JSONL
-で書き出します。DuckDB がそのまま読める形式です。SQL をかけたい場合は
-[data-toolbox-mcp](https://github.com/nlink-jp/data-toolbox-mcp) も登録し、
-work ディレクトリを向こうの `allowed_paths` に加えてください。
+このサーバーは結果ファイルを書きません（ADR-0009）。行は `limit` と `max_bytes`
+の範囲でレスポンスに載って返り、上限が落とした分は計上されます。SQL をかけたい
+場合は、返ってきた行を自分で `work_dir` に保存し（1 行 1 JSON の JSONL にすれば
+DuckDB がそのまま読みます）、そのパスを
+[data-toolbox-mcp](https://github.com/nlink-jp/data-toolbox-mcp) の `load_data`
+に渡してください。allowlist への登録は不要です — 資格情報のブラックリストを除き、
+あなたが読めるファイルはそのまま読めます。
 
-**渡す前にフィルタで絞ること。** data-toolbox の `load_data` は渡されたファイルを
-コピーするので、大きいキャプチャの無絞りエクスポートを渡すと全部複製されます。
+**渡す前にフィルタで絞ること。** `load_data` は渡されたファイルをコピーするので、
+大きいキャプチャの無絞りエクスポートを渡すと全部複製されます。まず display filter
+で絞り、`matched` で実際の規模を確かめてください。
 
 ## 関連
 

@@ -272,8 +272,10 @@ answering.
   across all SMB packets produced over 60,000 characters in practice
 - **A wrong field name returns `invalid_arguments` with `details.invalid_fields`**
   naming the offenders. Read that instead of guessing
-- **`limit: 0` exports everything as JSONL.** Hand it to data-toolbox-mcp when you want
-  SQL over it (see [client setup](client-setup.md))
+- **`limit: 0` drops the row cap**, leaving the byte budget as the only bound — it does
+  not write a file (ADR-0009). `truncated` / `omitted_rows` say what the budget left out,
+  and `matched` stays exact. To run SQL over the rows, save them yourself and hand the
+  path to data-toolbox-mcp (see [client setup](client-setup.md))
 - **Use `async: true` on large captures.** Decide from `describe_workspace`'s
   `packet_count` and `file_size`. The server handles requests serially, so a long
   synchronous call blocks everything else
@@ -309,7 +311,7 @@ Extracted values feed straight into the rest of the series.
 | `matched: 0` when it should be there | Wrong protocol generation (`smb.` vs `smb2.`). Check `protocol_hierarchy` |
 | `matched` is non-zero but every field is empty | The typed fields did not populate. Add `_ws.col.Info` |
 | `dcerpc.opnum` stays a number and never resolves | The BIND is not in the capture. Do not assert an operation name from the opnum |
-| The result is too large to work with | Trim `fields`, tighten the filter, or use `limit: 0` to write a file |
+| The result is too large to work with | Trim `fields`, tighten the filter, or lower `limit` — `omitted_rows` tells you what you are not seeing |
 | `invalid_arguments` | Read `details.invalid_fields` |
 | `operation not permitted` appears in `skipped` | The host's AV quarantined it. The call still succeeded and the other objects came back. See [field notes](field-notes.md) |
 | No `.exe` from `ftp-data` | A tshark limitation. An empty `skipped` proves the dissector never wrote them, so it is not the AV. Use the control-channel query instead |
