@@ -7,10 +7,11 @@ Navigation hints for AI agents (Claude Code, Cursor, etc.) working inside this p
 An MCP server (stdio, single Go binary) that analyses pcap / pcapng captures on
 behalf of an LLM agent. A version-pinned tshark runs inside a rootless,
 network-less container; the capture is mounted **read-only and never copied**.
-Results come back inline when small and as JSONL files in the workspace when
-large.
+Results come back in the tool response under an explicit row limit and byte
+bound, with whatever the bounds leave out counted (ADR-0009). The workspace
+holds only what `extract_objects` recovers.
 
-**Status: v0.1.0 released.** All twelve tools work; an independent security
+**Status: released.** All twelve tools work; an independent security
 review and a real-MCP-client pass have both been through the tree and their
 findings are fixed. An eleven-stage E2E suite drives the real binary against
 real podman.
@@ -47,7 +48,7 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 | `internal/workdir/` | The caller's work directory: argument → request `_meta` → error, its validation, and the input blacklist (ADR-0008) | — |
 | `internal/workspace/` | Workspace creation, `meta.json`, capinfos parsing, path validation | D ✅ |
 | `internal/tshark/` | tshark argument assembly and output parsing | E ✅ |
-| `internal/output/` | The output contract: byte threshold, `matched`, `sample`, JSONL | E ✅ |
+| `internal/output/` | The output contract: `max_bytes` + row limit, exact `matched`, `truncated` / `omitted_rows` | E ✅ |
 | `internal/job/` | Async jobs + `check_job`, with a concurrency cap | F ✅ |
 | `internal/payload/` | Untrusted (self-redacting), nonce framing, object defang | G ✅ |
 | `internal/tools/` | All twelve tool handlers | E ✅, G ✅ |

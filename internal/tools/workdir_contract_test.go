@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -121,4 +122,31 @@ func contains(haystack []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// A schema test catches a renamed argument; it does not catch a sentence. The
+// prose the model reads — tool descriptions, the usage manual, the container
+// manifest — drifts silently because nothing compiles it, and after ADR-0009
+// withdrew file-mediated results the help text still promised JSONL in the
+// workspace. This is what compiles the prose.
+func TestModelFacingProseNamesNoWithdrawnMechanism(t *testing.T) {
+	withdrawn := []string{"JSONL", "result_file", "results file", "sample_rows", "inline_max_bytes"}
+	d := newDeps(&fakeRunner{})
+	texts := map[string]string{}
+	for _, r := range d.all() {
+		texts["tool "+r.desc.Name+" description"] = r.desc.Description
+		texts["tool "+r.desc.Name+" schema"] = string(r.desc.InputSchema)
+	}
+	texts["usage manual"] = fmt.Sprint(usageDoc(65536, 500))
+	for _, old := range retiredWorkDirNames {
+		withdrawn = append(withdrawn, old)
+	}
+	for where, text := range texts {
+		for _, term := range withdrawn {
+			if strings.Contains(text, term) {
+				t.Errorf("%s still names %q: analysis results come back in the response "+
+					"(ADR-0009), and the work directory argument is work_dir", where, term)
+			}
+		}
+	}
 }

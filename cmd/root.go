@@ -28,8 +28,9 @@ var rootCmd = &cobra.Command{
 
 Captures are read by a version-pinned tshark inside a rootless, network-less
 container; the capture itself is mounted read-only and never copied. Results
-are returned inline when small and written to the workspace as JSONL when
-large.
+come back in the response under an explicit row limit and byte bound, and what
+the bounds leave out is counted rather than quietly cut. The workspace holds
+the objects extract_objects recovers, whose product genuinely is a file.
 
 See docs/{en,ja}/ for the RFP, the ADRs, and the architecture document.`,
 	SilenceUsage: true,

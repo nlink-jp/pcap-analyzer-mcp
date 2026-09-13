@@ -64,8 +64,9 @@ func Default() Manifest {
 			"Objects written under /work/out/objects/ come from the capture and " +
 				"are untrusted. They are stored as <sha256>.bin, never executable, " +
 				"and their bytes are never returned inline — pivot on the hash.",
-			"Results are files under /work, not inline bytes. Large output is " +
-				"JSONL so it can be read incrementally or loaded straight into DuckDB.",
+			"Analysis results come back in the tool response, not as files. The only " +
+				"things written under /work are the objects extract_objects recovers " +
+				"and tshark's own scratch.",
 		},
 	}
 }

@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] - 2026-09-13
+
+### Fixed
+
+- **`describe_workspace` reported no outputs at all.** The listing read one
+  level of `<workspace>/out/` and skipped directories — which worked while the
+  spilled query results sat there, and stopped working the moment 0.2.0 removed
+  them (ADR-0009). The only product left, what `extract_objects` recovers,
+  lives in `out/objects/`, one level down. The listing walks now, and skips
+  tshark's staging directory.
+- `--help` and the `describe_runtime` manifest still told the model that
+  results are files under `/work`, written as JSONL when large. They say what
+  the server does: results come back in the response under a row limit and a
+  byte bound, and the workspace holds only extracted objects.
+- The RFP's headline contract and two ADR index rows are annotated with the
+  revisions that overtook them, instead of reading as current.
+
+### Added
+
+- `TestModelFacingProseNamesNoWithdrawnMechanism` and
+  `TestManifestNamesNoWithdrawnMechanism` — the schema test already caught a
+  renamed argument; these catch a sentence. Prose drifts silently because
+  nothing compiles it.
+- `make test` now also type-checks the `integration` and `e2e` suites, which
+  `go test ./...` never builds.
+
 ## [0.2.0] - 2026-09-13
 
 ### Changed

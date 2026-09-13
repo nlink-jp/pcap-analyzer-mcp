@@ -103,3 +103,21 @@ func TestManifestDescribesBothMounts(t *testing.T) {
 		t.Fatal("manifest must describe /work")
 	}
 }
+
+// describe_runtime hands this manifest straight to the model, so a mechanism
+// the server no longer has must not survive in it. ADR-0009 withdrew
+// file-mediated results, and the note still told the model results are files
+// under /work written as JSONL.
+func TestManifestNamesNoWithdrawnMechanism(t *testing.T) {
+	m := Default()
+	text := strings.Join(m.Notes, "\n")
+	for _, mount := range m.Mounts {
+		text += "\n" + mount
+	}
+	for _, withdrawn := range []string{"JSONL", "result_file", "workspace_dir", "workspace_root"} {
+		if strings.Contains(text, withdrawn) {
+			t.Errorf("manifest still names %q: analysis results come back in the "+
+				"response (ADR-0009), and the work directory argument is work_dir", withdrawn)
+		}
+	}
+}

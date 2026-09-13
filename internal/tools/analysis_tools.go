@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -359,25 +360,42 @@ func (d *Deps) countMatches(ctx context.Context, ws *workspace.Workspace, filter
 	return n, nil
 }
 
-// listOutputs enumerates the result files a workspace has accumulated.
+// listOutputs enumerates the files a workspace has on disk.
+//
+// Until ADR-0009 those were the spilled query results, which sat directly in
+// out/; it read one level and skipped directories. The spill is gone, so the
+// only product left is what extract_objects writes — and that lives one level
+// down in out/objects/, which the old listing skipped. describe_workspace
+// therefore reported an empty set no matter how much had been extracted.
+// It walks now, and it skips the staging directory extract_objects deletes on
+// its way out.
 func listOutputs(outDir string) ([]map[string]any, error) {
-	entries, err := os.ReadDir(outDir)
-	if err != nil {
+	if _, err := os.Stat(outDir); err != nil {
 		return nil, err
 	}
-	out := make([]map[string]any, 0, len(entries))
-	for _, e := range entries {
+	out := make([]map[string]any, 0, 8)
+	err := filepath.WalkDir(outDir, func(path string, e fs.DirEntry, err error) error {
+		if err != nil {
+			return nil // an unreadable corner is not worth failing the describe
+		}
 		if e.IsDir() {
-			continue
+			if e.Name() == "_raw" {
+				return fs.SkipDir
+			}
+			return nil
 		}
 		info, err := e.Info()
 		if err != nil {
-			continue
+			return nil
 		}
 		out = append(out, map[string]any{
-			"path":  filepath.Join(outDir, e.Name()),
+			"path":  path,
 			"bytes": info.Size(),
 		})
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return out[i]["path"].(string) < out[j]["path"].(string)

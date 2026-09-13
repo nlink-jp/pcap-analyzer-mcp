@@ -7,7 +7,7 @@
 
 Agents cannot work with pcap / pcapng files. Wrapping tshark thinly in an MCP server does not help: `tshark -V` produces hundreds of lines for a single packet, and `-T json` yields several MB for a thousand packets. The output burns through the context window before any analysis can happen.
 
-`pcap-analyzer-mcp` is an MCP server that confines a version-pinned tshark inside a container, mounts the target capture read-only, and returns results under a single contract: **small results inline as JSON, large results as a JSONL file in the workspace**. This lets an agent progressively narrow down a GB-scale packet capture during security incident investigation and network troubleshooting.
+`pcap-analyzer-mcp` is an MCP server that confines a version-pinned tshark inside a container, mounts the target capture read-only, and returns results under a single contract: ~~**small results inline as JSON, large results as a JSONL file in the workspace**~~ → revised 2026-09-13 (ADR-0009): **results come back in the response under a row limit and a byte bound, and what the bounds leave out is counted**. The workspace holds only the objects `extract_objects` recovers. This lets an agent progressively narrow down a GB-scale packet capture during security incident investigation and network troubleshooting.
 
 The target user is the developer themselves, performing incident response and troubleshooting from Claude Code / Cowork.
 
@@ -203,8 +203,8 @@ The image is pinned by digest, and **the image ID and tshark version actually us
 | ADR-0001 | tshark as the backend (rejecting Zeek, leaving room for a second backend) |
 | ADR-0002 | Ephemeral per-call containers (why data-toolbox's persistent model is not adopted) |
 | ADR-0003 | Lean tshark-only image + digest pin (no DuckDB; exports are JSONL / CSV) |
-| ADR-0004 | 1 pcap : 1 workspace + read-only mount (no copying; `workspace_dir` supplied per call) |
-| ADR-0005 | Output contract (byte threshold / JSONL / always `matched` and `sample` / invariant shape) |
+| ADR-0004 | 1 pcap : 1 workspace + read-only mount (no copying; `workspace_dir` supplied per call — renamed `work_dir` by ADR-0008) |
+| ADR-0005 | Output contract (byte threshold / JSONL / always `matched` and `sample` / invariant shape) — the file-mediated half withdrawn by ADR-0009 |
 | ADR-0006 | Async jobs (ported from video-studio ADR-0003, heavy tools only) |
 | ADR-0007 | Payload safety (injection isolation / defang / log exclusion / ranged reads) |
 
