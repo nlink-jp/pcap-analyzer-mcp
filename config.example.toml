@@ -24,11 +24,13 @@ network = "none"
 # order, so an unbounded run takes the whole server with it.
 timeout = "30m"
 
-[workspace]
-# A guardrail, not a sandbox boundary (ADR-0004). Empty means any readable
-# file may be opened as a capture. Set this when the server is not for your
-# eyes only. Entries must be absolute; a leading ~ is expanded.
-allowed_paths = []
+# [workspace] has no settings. It held allowed_paths, deleted in ADR-0008: an
+# operator allowlist could not express what it was for — prefix matching has no
+# per-repository granularity, so covering a work root meant listing the home
+# directory, which admits the files the list was there to keep out. What the
+# capture path is checked against now is a fixed blacklist of credential
+# locations, in code. A config still carrying the key fails at startup rather
+# than having it silently ignored.
 
 [output]
 # Results larger than this many serialized bytes are written to the workspace

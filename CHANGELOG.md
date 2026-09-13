@@ -7,6 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking: `workspace_dir` is now `work_dir`, on every tool.** It means what
+  the caller means by it — the absolute path of a directory the caller can read
+  back — and the workspace is `<work_dir>/<workspace_id>/` as before. A call
+  still sending `workspace_dir` (or `workspace_root` / `workspaceRoot`) is
+  refused with `work_dir_required` naming the replacement. This is the
+  organization's work-directory contract for file-mediated MCP servers; see
+  [ADR-0008](docs/en/adr/0008-work-dir-contract.md).
+- **Breaking: `workspace.allowed_paths` is deleted, and a config still carrying
+  it fails at startup.** The list could not express what ADR-0004 wanted from
+  it: prefix matching has no per-repository granularity, so covering a work root
+  meant listing the home directory, which admits the files the list existed to
+  keep out. In practice it named two agent runtimes' state directories by hand
+  and refused a capture staged by a third. Unknown config keys are now rejected
+  by name rather than ignored.
+- `pcap_path` may now be any path you can read, except a fixed in-code blacklist
+  of credential and agent-control locations (`~/.ssh`, `~/.aws`,
+  `~/.config/gcloud`, `~/.gnupg`, `~/Library/Keychains`, `~/.claude`, `~/.codex`,
+  `~/.config/{gem-agent,lagent}`, any `.env`). Symlinks are resolved first, so a
+  link cannot smuggle a blacklisted target in. The blacklist is a floor, not a
+  boundary — bounding what this process may touch at all is left to a future
+  sandboxing proxy.
+- A runtime may supply the work directory instead of the model: the server reads
+  `_meta["jp.nlink/work_dir"]` from the `tools/call` request when the argument is
+  absent. The argument always wins.
+- Results that name a workspace now echo the resolved `work_dir`.
+- `doctor` drops its `allowed_paths` branch and probes the conventional macOS
+  shares (`/Users`, `/private/tmp`, `/var/folders`) only.
+
+### Added
+
+- Five error codes that say which part of the contract failed:
+  `work_dir_required`, `work_dir_invalid`, `work_dir_not_found`,
+  `work_dir_not_writable`, `work_dir_denied`. The work directory must already
+  exist (the server does not create it), be writable, and not be a system
+  location, the home directory itself, or a credential directory.
+
+## [Unreleased]
+
 ### Fixed
 
 - **A job no longer starts while the server is shutting down.** A queued job

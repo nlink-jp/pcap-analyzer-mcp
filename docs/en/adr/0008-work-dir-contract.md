@@ -72,8 +72,17 @@ always exists, so a path that is not there is a typo.
 - The `workspace.allowed_paths` key is removed, and **a config still carrying it
   fails loudly** (unknown keys detected via BurntSushi's `Undecoded()`). Ignoring it
   silently would delete a guard the operator believes they wrote.
-- The blacklist is a **floor, not a boundary**. Bounding what the process may touch
-  at all belongs to a sandboxing MCP proxy, which is deliberately deferred.
+- **The check runs on both spellings: the path as given and its symlink-resolved
+  form.** Measurement settled this: `~/.ssh/config` on this machine is a symlink to a
+  file in a cloud-sync folder, so resolving first made the path stop looking like
+  `~/.ssh` and walked straight past the list. Comparing only the unresolved form has
+  the opposite hole — a link planted in an ordinary directory would step through it.
+  Both forms of the path are checked against both forms of every entry, since an
+  entry may itself be a symlink.
+- The blacklist is a **floor, not a boundary**. When the same content also exists
+  outside the list — the cloud-sync copy above, named directly — nothing stops it.
+  Bounding what the process may touch at all belongs to a sandboxing MCP proxy,
+  which is deliberately deferred.
 
 ### 5. Writes stay under `work_dir`
 

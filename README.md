@@ -68,13 +68,23 @@ A typical session: create a workspace for a capture, look at its metadata,
 find the interesting conversations, then narrow down with a display filter.
 
 ```
-create_workspace(pcap_path, workspace_dir)  →  workspace_id, sha256, summary
+create_workspace(pcap_path, work_dir)  →  workspace_id, sha256, summary
 describe_workspace(workspace_id)            →  packet count, time range, snaplen
 list_conversations(workspace_id)            →  who talked to whom (+ stream index)
 query_packets(workspace_id, filter, fields) →  rows inline, or a JSONL file
 follow_stream(workspace_id, ...)            →  the bytes on the wire
 extract_objects(workspace_id, "http")       →  files, defanged, hashed
 ```
+
+Every call also names `work_dir`: the absolute path of a directory **you can
+read back**, usually your session or working directory. The workspace is
+`<work_dir>/<workspace_id>/`, results too large to return inline are written
+there, and the pair `(work_dir, workspace_id)` is a workspace's whole address —
+this server keeps nothing across restarts. It is required and has no default.
+
+The capture itself may live anywhere you can read; it is mounted read-only and
+never copied. The only refused locations are credential and agent-control
+directories such as `~/.ssh` and `~/.aws`.
 
 ### Tools
 
@@ -83,7 +93,7 @@ extract_objects(workspace_id, "http")       →  files, defanged, hashed
 | `get_usage` | Workspace model, output contract, error recovery |
 | `create_workspace` | Open a capture. Records SHA-256, `capinfos`, tshark version |
 | `describe_workspace` | Cached capture metadata — starts no container |
-| `list_workspaces` | Enumerate workspaces under a `workspace_dir` |
+| `list_workspaces` | Enumerate workspaces under a `work_dir` |
 | `delete_workspace` | Remove a workspace (`dry_run` available) |
 | `describe_runtime` | Image digest, tshark version, supported object protocols |
 | `protocol_hierarchy` | What protocols are in this capture |

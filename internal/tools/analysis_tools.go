@@ -21,10 +21,10 @@ import (
 // --- protocol_hierarchy -----------------------------------------------------
 
 type hierarchyArgs struct {
-	WorkspaceID  string `json:"workspace_id"`
-	WorkspaceDir string `json:"workspace_dir"`
-	Filter       string `json:"filter"`
-	Async        bool   `json:"async"`
+	WorkspaceID string `json:"workspace_id"`
+	WorkDir     string `json:"work_dir"`
+	Filter      string `json:"filter"`
+	Async       bool   `json:"async"`
 }
 
 func (d *Deps) protocolHierarchy() registration {
@@ -38,11 +38,11 @@ func (d *Deps) protocolHierarchy() registration {
   "type": "object",
   "properties": {
     "workspace_id": {"type": "string"},
-    "workspace_dir": {"type": "string"},
+    ` + workDirProp + `,
     "filter": {"type": "string", "description": "Optional Wireshark display filter to scope the statistics."},
     "async": {"type": "boolean", "description": "Run in the background and return a job_id immediately. Use for large captures: a full pass takes minutes and would otherwise hit your request timeout. Poll with check_job."}
   },
-  "required": ["workspace_id", "workspace_dir"],
+  "required": ["workspace_id", "work_dir"],
   "additionalProperties": false
 }`),
 		},
@@ -51,7 +51,7 @@ func (d *Deps) protocolHierarchy() registration {
 			if err := decode(raw, &a); err != nil {
 				return nil, err
 			}
-			ws, err := d.loadWorkspace(a.WorkspaceID, a.WorkspaceDir)
+			ws, err := d.loadWorkspace(ctx, a.WorkspaceID, a.WorkDir)
 			if err != nil {
 				return nil, err
 			}
@@ -82,13 +82,13 @@ func (d *Deps) protocolHierarchy() registration {
 // --- list_conversations -----------------------------------------------------
 
 type conversationArgs struct {
-	WorkspaceID  string `json:"workspace_id"`
-	WorkspaceDir string `json:"workspace_dir"`
-	Transport    string `json:"transport"`
-	Filter       string `json:"filter"`
-	SortBy       string `json:"sort_by"`
-	TopN         int    `json:"top_n"`
-	Async        bool   `json:"async"`
+	WorkspaceID string `json:"workspace_id"`
+	WorkDir     string `json:"work_dir"`
+	Transport   string `json:"transport"`
+	Filter      string `json:"filter"`
+	SortBy      string `json:"sort_by"`
+	TopN        int    `json:"top_n"`
+	Async       bool   `json:"async"`
 }
 
 func (d *Deps) listConversations() registration {
@@ -102,14 +102,14 @@ func (d *Deps) listConversations() registration {
   "type": "object",
   "properties": {
     "workspace_id": {"type": "string"},
-    "workspace_dir": {"type": "string"},
+    ` + workDirProp + `,
     "transport": {"type": "string", "enum": ["tcp", "udp"], "description": "Default tcp."},
     "filter": {"type": "string", "description": "Optional display filter, ANDed with the transport."},
     "sort_by": {"type": "string", "enum": ["bytes", "frames", "start", "stream"], "description": "Default bytes."},
     "top_n": {"type": "integer", "description": "Keep only the first N after sorting. 0 or absent means all."},
     "async": {"type": "boolean", "description": "Run in the background and return a job_id immediately. Use for large captures: a full pass takes minutes and would otherwise hit your request timeout. Poll with check_job."}
   },
-  "required": ["workspace_id", "workspace_dir"],
+  "required": ["workspace_id", "work_dir"],
   "additionalProperties": false
 }`),
 		},
@@ -125,7 +125,7 @@ func (d *Deps) listConversations() registration {
 				return nil, toolerr.Newf(toolerr.CodeInvalidArguments,
 					"transport must be tcp or udp, got %q", a.Transport)
 			}
-			ws, err := d.loadWorkspace(a.WorkspaceID, a.WorkspaceDir)
+			ws, err := d.loadWorkspace(ctx, a.WorkspaceID, a.WorkDir)
 			if err != nil {
 				return nil, err
 			}
@@ -199,13 +199,13 @@ func (d *Deps) listConversations() registration {
 // --- query_packets ----------------------------------------------------------
 
 type queryArgs struct {
-	WorkspaceID  string   `json:"workspace_id"`
-	WorkspaceDir string   `json:"workspace_dir"`
-	Filter       string   `json:"filter"`
-	Fields       []string `json:"fields"`
-	Limit        *int     `json:"limit"`
-	Format       string   `json:"format"`
-	Async        bool     `json:"async"`
+	WorkspaceID string   `json:"workspace_id"`
+	WorkDir     string   `json:"work_dir"`
+	Filter      string   `json:"filter"`
+	Fields      []string `json:"fields"`
+	Limit       *int     `json:"limit"`
+	Format      string   `json:"format"`
+	Async       bool     `json:"async"`
 }
 
 // defaultQueryFields is a usable starting set for someone who has not decided
@@ -228,14 +228,14 @@ func (d *Deps) queryPackets() registration {
   "type": "object",
   "properties": {
     "workspace_id": {"type": "string"},
-    "workspace_dir": {"type": "string"},
+    ` + workDirProp + `,
     "filter": {"type": "string", "description": "Wireshark display filter, e.g. \"tcp.flags.reset == 1 && ip.addr == 10.0.0.1\". Empty means every packet."},
     "fields": {"type": "array", "items": {"type": "string"}, "description": "Field names to extract, e.g. [\"frame.number\",\"ip.src\",\"http.host\"]. Defaults to a general-purpose set."},
     "limit": {"type": "integer", "description": "Maximum rows to return. Omit for the configured default; 0 means unlimited and always writes a file."},
     "format": {"type": "string", "enum": ["jsonl", "csv"], "description": "Encoding of the output file. Default jsonl."},
     "async": {"type": "boolean", "description": "Run in the background and return a job_id immediately. Use for large captures: a full pass takes minutes and would otherwise hit your request timeout. Poll with check_job."}
   },
-  "required": ["workspace_id", "workspace_dir"],
+  "required": ["workspace_id", "work_dir"],
   "additionalProperties": false
 }`),
 		},
@@ -265,7 +265,7 @@ func (d *Deps) handleQueryPackets(ctx context.Context, raw json.RawMessage) (any
 		limit = *a.Limit
 	}
 
-	ws, err := d.loadWorkspace(a.WorkspaceID, a.WorkspaceDir)
+	ws, err := d.loadWorkspace(ctx, a.WorkspaceID, a.WorkDir)
 	if err != nil {
 		return nil, err
 	}

@@ -11,14 +11,19 @@ import (
 // describePayload is the shape describe_workspace returns, and what
 // create_workspace echoes back so a freshly created workspace needs no
 // follow-up call.
-func describePayload(id, dir string, meta *workspace.Meta, outputs []map[string]any) map[string]any {
+func describePayload(ws *workspace.Workspace, outputs []map[string]any) map[string]any {
+	meta := ws.Meta
 	payload := map[string]any{
-		"workspace_id": id,
-		"workspace":    dir,
-		"capture":      meta.Capture,
-		"info":         meta.Info,
-		"runtime":      meta.Runtime,
-		"created_at":   meta.CreatedAt,
+		"workspace_id": ws.ID,
+		// work_dir is echoed because a caller whose runtime supplied it
+		// through the request _meta (ADR-0008 §6) learns the destination from
+		// the result and nowhere else.
+		"work_dir":   ws.Root,
+		"workspace":  ws.Dir,
+		"capture":    meta.Capture,
+		"info":       meta.Info,
+		"runtime":    meta.Runtime,
+		"created_at": meta.CreatedAt,
 	}
 	if outputs != nil {
 		payload["outputs"] = outputs
@@ -54,12 +59,20 @@ func usageDoc(inlineMaxBytes, defaultRowLimit int) map[string]any {
 		"model": []string{
 			"A workspace binds one capture to one directory. create_workspace opens a " +
 				"capture and reads it once; everything after that refers to the workspace_id.",
+			"Every call names work_dir: the absolute path of a directory you can read back, " +
+				"usually your session or working directory. The workspace is " +
+				"<work_dir>/<workspace_id>/ and every file this server writes lands under it. " +
+				"It is required and has no default, and the pair (work_dir, workspace_id) is " +
+				"a workspace's whole address — this server keeps nothing across restarts.",
+			"pcap_path may be anywhere you can read, and the capture is not copied. The only " +
+				"refused locations are credential and agent-control directories such as " +
+				"~/.ssh and ~/.aws.",
 			"The capture is mounted read-only into a network-less container and is never " +
 				"copied or modified. Deleting a workspace never deletes the capture.",
 			"Workspaces live on disk, so list_workspaces finds ones from earlier sessions.",
 		},
 		"suggested_flow": []string{
-			"1. create_workspace(pcap_path, workspace_dir)",
+			"1. create_workspace(pcap_path, work_dir)",
 			"2. describe_workspace — free; check packet_count, the time range, and truncated",
 			"3. protocol_hierarchy — what protocols are in here",
 			"4. list_conversations — who talked to whom, and the stream indices",
@@ -110,10 +123,18 @@ func usageDoc(inlineMaxBytes, defaultRowLimit int) map[string]any {
 			"invalid_display_filter": "tshark's own message is in details.tshark_message, usually " +
 				"with the expression and the column it objected to. Fix and retry.",
 			"invalid_arguments":   "For a bad field name, details.invalid_fields lists exactly which ones.",
-			"workspace_not_found": "Check workspace_dir; list_workspaces shows what is there.",
+			"workspace_not_found": "Check work_dir; list_workspaces shows what is there.",
 			"pcap_unreadable":     "The path does not resolve or cannot be read.",
-			"path_not_allowed":    "allowed_paths is configured and the capture is outside it.",
-			"container_failed":    "podman could not run. `pcap-analyzer-mcp doctor` diagnoses this.",
+			"path_not_allowed": "The capture resolves into a location no tool argument may " +
+				"point at — a credential or agent-control directory. There is no operator " +
+				"allowlist to widen; move or copy the capture somewhere ordinary.",
+			"work_dir_required": "No work_dir argument, and your runtime attached no hint. " +
+				"Pass the absolute path of a directory you can read back.",
+			"work_dir_invalid":      "Not absolute, started with ~, or contained `..`.",
+			"work_dir_not_found":    "The directory is not there, or is not a directory. It is yours, so this is a typo — this server does not create it.",
+			"work_dir_not_writable": "This server cannot write there.",
+			"work_dir_denied":       "A system location, your home directory itself, or a credential directory.",
+			"container_failed":      "podman could not run. `pcap-analyzer-mcp doctor` diagnoses this.",
 			"payload_unavailable_truncated_capture": "The capture has no payload to extract. " +
 				"This is a property of the evidence; retrying will not change it. Note that a " +
 				"snaplen small enough to cut the transport header also empties " +

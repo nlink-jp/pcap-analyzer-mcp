@@ -57,99 +57,63 @@ func TestWorkspacePathJoinsUnderRoot(t *testing.T) {
 	}
 }
 
-func TestResolveAndCheckUnrestrictedByDefault(t *testing.T) {
+func TestResolveInputTakesAnyReadablePath(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "c.pcap")
 	if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	got, err := ResolveAndCheck(p, nil)
+	got, err := ResolveInput(p)
 	if err != nil {
-		t.Fatalf("empty allowed_paths must mean unrestricted: %v", err)
+		t.Fatalf("an ordinary capture path must be accepted: %v", err)
 	}
 	if !strings.HasSuffix(got, "c.pcap") {
 		t.Errorf("got %q", got)
 	}
 }
 
-func TestResolveAndCheckRejectsOutsideAllowed(t *testing.T) {
-	allowed := t.TempDir()
-	other := t.TempDir()
-	p := filepath.Join(other, "c.pcap")
-	if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
+// The blacklist is the whole of the input guard now (ADR-0008 §4). It is a
+// floor, not a boundary — but the floor has to hold.
+func TestResolveInputRefusesCredentialLocations(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home directory: %v", err)
 	}
-
-	_, err := ResolveAndCheck(p, []string{allowed})
+	p := filepath.Join(home, ".ssh", "id_rsa")
+	if _, err := os.Stat(p); err != nil {
+		t.Skipf("no %s on this host: %v", p, err)
+	}
+	_, err = ResolveInput(p)
 	if err == nil {
-		t.Fatal("want rejection")
+		t.Fatal("a path under ~/.ssh must be refused")
 	}
 	if !errors.Is(err, toolerr.New(toolerr.CodePathNotAllowed, "")) {
 		t.Errorf("want path_not_allowed, got %v", err)
 	}
 }
 
-// A symlink inside an allowed directory pointing outside it must not smuggle
-// the target in. Resolution happens before the containment check for exactly
-// this case.
-func TestResolveAndCheckFollowsSymlinksBeforeChecking(t *testing.T) {
-	allowed := t.TempDir()
-	secret := t.TempDir()
-
-	target := filepath.Join(secret, "elsewhere.pcap")
-	if err := os.WriteFile(target, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
+// Resolution happens before the blacklist check, so a link planted in an
+// ordinary directory cannot smuggle a blacklisted target in.
+func TestResolveInputFollowsSymlinksBeforeChecking(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Skipf("no home directory: %v", err)
 	}
-	link := filepath.Join(allowed, "innocent.pcap")
+	target := filepath.Join(home, ".ssh")
+	if _, err := os.Stat(target); err != nil {
+		t.Skipf("no %s on this host: %v", target, err)
+	}
+	link := filepath.Join(t.TempDir(), "innocent.pcap")
 	if err := os.Symlink(target, link); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-
-	if _, err := ResolveAndCheck(link, []string{allowed}); err == nil {
-		t.Error("a symlink out of an allowed directory must be rejected")
+	if _, err := ResolveInput(link); err == nil {
+		t.Error("a symlink into a blacklisted directory must be rejected")
 	}
 }
 
-// The converse: an allowed_paths entry that is itself a symlink (common on
-// macOS, where /tmp is a link to /private/tmp) must still match.
-func TestResolveAndCheckResolvesAllowedEntries(t *testing.T) {
-	real := t.TempDir()
-	linkDir := filepath.Join(t.TempDir(), "link")
-	if err := os.Symlink(real, linkDir); err != nil {
-		t.Skipf("symlinks unavailable: %v", err)
-	}
-	p := filepath.Join(real, "c.pcap")
-	if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := ResolveAndCheck(p, []string{linkDir}); err != nil {
-		t.Errorf("a symlinked allowed_paths entry should still match: %v", err)
-	}
-}
-
-// A prefix match on the raw string would let /data-evil pass for /data.
-func TestResolveAndCheckRequiresPathBoundary(t *testing.T) {
-	base := t.TempDir()
-	allowed := filepath.Join(base, "data")
-	sibling := filepath.Join(base, "data-evil")
-	for _, d := range []string{allowed, sibling} {
-		if err := os.MkdirAll(d, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	p := filepath.Join(sibling, "c.pcap")
-	if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := ResolveAndCheck(p, []string{allowed}); err == nil {
-		t.Error("/data must not admit /data-evil")
-	}
-}
-
-func TestResolveAndCheckMissingFile(t *testing.T) {
-	_, err := ResolveAndCheck(filepath.Join(t.TempDir(), "absent.pcap"), nil)
+func TestResolveInputRejectsMissingPath(t *testing.T) {
+	_, err := ResolveInput(filepath.Join(t.TempDir(), "absent.pcap"))
 	if !errors.Is(err, toolerr.New(toolerr.CodePcapUnreadable, "")) {
 		t.Errorf("want pcap_unreadable, got %v", err)
 	}

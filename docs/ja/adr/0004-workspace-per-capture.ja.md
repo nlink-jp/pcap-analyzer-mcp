@@ -1,6 +1,6 @@
 # ADR-0004: 1 pcap : 1 workspace と read-only マウント
 
-- Status: Accepted
+- Status: Accepted（`allowed_paths` 条項は [ADR-0008](0008-work-dir-contract.ja.md) が置き換え）
 - Date: 2026-07-26
 - Driver: magi
 - Revisions: 2026-07-26 — Track D の実測を受け、親ディレクトリ ro マウントを**単一ファイル ro マウント**に変更

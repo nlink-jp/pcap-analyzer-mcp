@@ -70,13 +70,13 @@ type Limits struct {
 	Timeout Duration `toml:"timeout"`
 }
 
-// Workspace controls where analysis state lives and which captures may be
-// opened.
-type Workspace struct {
-	// AllowedPaths is a guardrail, not a sandbox boundary (ADR-0004).
-	// Empty means unrestricted.
-	AllowedPaths []string `toml:"allowed_paths"`
-}
+// Workspace is retained as a config section with no keys.
+//
+// It held allowed_paths, deleted in ADR-0008: an operator allowlist could not
+// express what it was for, and a fixed blacklist in code replaced it. The
+// section stays declared so a config that still carries the key is reported by
+// name rather than as an unknown section.
+type Workspace struct{}
 
 // Output implements the size half of the output contract (ADR-0005).
 type Output struct {
@@ -146,9 +146,6 @@ func Default() Config {
 				Timeout: Duration{30 * time.Minute},
 			},
 		},
-		Workspace: Workspace{
-			AllowedPaths: nil,
-		},
 		Output: Output{
 			InlineMaxBytes:   65536,
 			DefaultRowLimit:  10000,
@@ -195,8 +192,12 @@ func Load(path string) (Config, error) {
 	}
 	// Decoding onto the defaults means an absent key keeps its default
 	// rather than becoming a zero value.
-	if err := toml.Unmarshal(data, &cfg); err != nil {
+	md, err := toml.Decode(string(data), &cfg)
+	if err != nil {
 		return Config{}, fmt.Errorf("parse config %s: %w", path, err)
+	}
+	if err := rejectUnknownKeys(path, md.Undecoded()); err != nil {
+		return Config{}, err
 	}
 
 	cfg.normalize()
@@ -206,12 +207,38 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
+// removedKeys names keys this server used to honour, so a config still
+// carrying one is told what happened instead of being told it is unknown.
+var removedKeys = map[string]string{
+	"workspace.allowed_paths": "removed in ADR-0008: the capture path is no longer " +
+		"checked against an operator allowlist, only against a fixed blacklist of " +
+		"credential locations. Delete the key (and the [workspace] section if it is " +
+		"now empty).",
+}
+
+// rejectUnknownKeys turns a key this server does not read into a startup
+// failure. Silence here is the worse outcome by a distance: an operator who
+// wrote a guard and had it ignored would believe it was in force, and the one
+// key that has actually been removed is exactly such a guard.
+func rejectUnknownKeys(path string, undecoded []toml.Key) error {
+	if len(undecoded) == 0 {
+		return nil
+	}
+	var msgs []string
+	for _, k := range undecoded {
+		name := k.String()
+		if why, ok := removedKeys[name]; ok {
+			msgs = append(msgs, fmt.Sprintf("%s: %s", name, why))
+			continue
+		}
+		msgs = append(msgs, fmt.Sprintf("%s: not a setting this server reads", name))
+	}
+	return fmt.Errorf("config %s: %s", path, strings.Join(msgs, "; "))
+}
+
 // normalize applies boundary conversions once, so the rest of the program
 // only ever sees canonical values.
 func (c *Config) normalize() {
-	for i, p := range c.Workspace.AllowedPaths {
-		c.Workspace.AllowedPaths[i] = ExpandHome(p)
-	}
 	c.Log.File = ExpandHome(c.Log.File)
 	c.Log.Level = strings.ToLower(strings.TrimSpace(c.Log.Level))
 }
@@ -278,11 +305,6 @@ func (c *Config) Validate() error {
 	case "debug", "info", "warn", "error":
 	default:
 		return fmt.Errorf("log.level must be one of debug/info/warn/error, got %q", c.Log.Level)
-	}
-	for _, p := range c.Workspace.AllowedPaths {
-		if !filepath.IsAbs(p) {
-			return fmt.Errorf("workspace.allowed_paths entries must be absolute, got %q", p)
-		}
 	}
 	return nil
 }

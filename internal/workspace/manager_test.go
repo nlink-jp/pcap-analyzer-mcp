@@ -127,7 +127,7 @@ func TestCreateMountsCaptureReadOnly(t *testing.T) {
 		t.Error("the capture must be mounted read-only")
 	}
 	// The symlink-resolved path is what gets mounted — the same path that was
-	// checked against allowed_paths and hashed, so the three cannot disagree.
+	// blacklist-checked and hashed, so the three cannot disagree.
 	resolved, err := filepath.EvalSymlinks(pcap)
 	if err != nil {
 		t.Fatal(err)
@@ -262,7 +262,7 @@ func TestListMissingRootIsEmptyNotAnError(t *testing.T) {
 	m, _, _, _ := newFixture(t)
 	got, err := m.List(filepath.Join(t.TempDir(), "never-created"))
 	if err != nil {
-		t.Fatalf("a workspace_dir that does not exist yet is empty, not broken: %v", err)
+		t.Fatalf("a work_dir that does not exist yet is empty, not broken: %v", err)
 	}
 	if len(got) != 0 {
 		t.Errorf("got %+v", got)

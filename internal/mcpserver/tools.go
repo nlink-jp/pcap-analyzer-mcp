@@ -25,8 +25,28 @@ func (s *Server) handleToolsList(req jsonrpc.Request) error {
 }
 
 type toolsCallParams struct {
-	Name      string          `json:"name"`
-	Arguments json.RawMessage `json:"arguments"`
+	Name      string                     `json:"name"`
+	Arguments json.RawMessage            `json:"arguments"`
+	Meta      map[string]json.RawMessage `json:"_meta"`
+}
+
+// metaCtxKey carries the request's `_meta` object to tool handlers.
+type metaCtxKey struct{}
+
+// RequestMeta returns the `_meta` object of the tools/call being handled, or
+// nil. It is how a calling runtime hands this server per-session facts — the
+// work directory above all — without every tool declaring them in its schema
+// (ADR-0008 §2). Values are raw JSON: this layer does not know what any key
+// means.
+func RequestMeta(ctx context.Context) map[string]json.RawMessage {
+	m, _ := ctx.Value(metaCtxKey{}).(map[string]json.RawMessage)
+	return m
+}
+
+// WithRequestMeta attaches a `_meta` object to ctx. Exported for tests and for
+// hosts that drive tool handlers without the stdio transport.
+func WithRequestMeta(ctx context.Context, meta map[string]json.RawMessage) context.Context {
+	return context.WithValue(ctx, metaCtxKey{}, meta)
 }
 
 // ContentBlock is one block in the tools/call result.content array.
@@ -55,6 +75,9 @@ func (s *Server) handleToolsCall(ctx context.Context, req jsonrpc.Request) error
 	h, ok := s.handlers[p.Name]
 	if !ok {
 		return s.writeError(req.ID, jsonrpc.CodeMethodNotFound, "unknown tool: "+p.Name)
+	}
+	if len(p.Meta) > 0 {
+		ctx = WithRequestMeta(ctx, p.Meta)
 	}
 	out, err := s.invoke(ctx, h, p.Arguments)
 	if err != nil {

@@ -32,29 +32,32 @@ func newDiagnosis() (*diagnosis, *bytes.Buffer) {
 	return &diagnosis{out: &buf}, &buf
 }
 
-// A path the operator explicitly listed in allowed_paths is one they intend to
-// analyse, so an unreachable one is a fault, not a note.
-func TestCheckMountsUnreachableAllowedPathFails(t *testing.T) {
+// With no operator allowlist (ADR-0008), the useful answer is which of the
+// conventional macOS shares reach the podman VM — a capture has to live under
+// one of them for the mount to work at all.
+func TestCheckMountsProbesTheDefaultShares(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("the default-share probe is darwin-only")
+	}
 	d, buf := newDiagnosis()
-	p := &fakeProber{reachable: map[string]bool{"/Users/x/captures": true}}
+	p := &fakeProber{reachable: map[string]bool{"/Users": true, "/private/tmp": true}}
 
-	d.checkMounts(context.Background(), p, "img",
-		[]string{"/Users/x/captures", "/Volumes/external"})
+	d.checkMounts(context.Background(), p, "img")
 
-	if d.failed != 1 {
-		t.Errorf("failed = %d, want 1", d.failed)
+	if d.failed != 0 {
+		t.Errorf("failed = %d; an unreachable default share is a note, not a fault", d.failed)
 	}
 	out := buf.String()
-	if !strings.Contains(out, "[FAIL]") || !strings.Contains(out, "/Volumes/external") {
-		t.Errorf("unreachable allowed_path not reported as a failure:\n%s", out)
+	for _, want := range []string{"/Users", "/private/tmp", "/var/folders"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("share %s was not probed:\n%s", want, out)
+		}
 	}
-	if !strings.Contains(out, "no such file") {
-		t.Errorf("podman's reason should be surfaced:\n%s", out)
+	if !strings.Contains(out, "[warn]") {
+		t.Errorf("an unreachable share should warn:\n%s", out)
 	}
 }
 
-// With allowed_paths empty the probe is advisory: it is telling the user where
-// captures have to live, not judging a choice they made.
 func TestCheckMountsDefaultSharesOnlyWarn(t *testing.T) {
 	if runtime.GOOS != "darwin" {
 		t.Skip("default-share probing only applies to the macOS VM")
@@ -62,7 +65,7 @@ func TestCheckMountsDefaultSharesOnlyWarn(t *testing.T) {
 	d, buf := newDiagnosis()
 	p := &fakeProber{reachable: map[string]bool{"/Users": true, "/private/tmp": true}}
 
-	d.checkMounts(context.Background(), p, "img", nil)
+	d.checkMounts(context.Background(), p, "img")
 
 	if d.failed != 0 {
 		t.Errorf("an unreachable default share must not fail the run; failed = %d", d.failed)
@@ -87,7 +90,7 @@ func TestCheckMountsSkipsDefaultProbeOffDarwin(t *testing.T) {
 	d, buf := newDiagnosis()
 	p := &fakeProber{}
 
-	d.checkMounts(context.Background(), p, "img", nil)
+	d.checkMounts(context.Background(), p, "img")
 
 	if len(p.probed) != 0 {
 		t.Errorf("should not probe conventional paths off darwin, probed %v", p.probed)
@@ -101,9 +104,11 @@ func TestCheckMountsProbeErrorWarns(t *testing.T) {
 	d, _ := newDiagnosis()
 	p := &fakeProber{err: errors.New("podman exploded")}
 
-	d.checkMounts(context.Background(), p, "img", []string{"/Users/x"})
+	d.checkMounts(context.Background(), p, "img")
 
-	if d.warned != 1 || d.failed != 0 {
+	// One warning per share probed, and no verdict either way: a probe that
+	// could not run says nothing about whether the mount would work.
+	if d.warned == 0 || d.failed != 0 {
 		t.Errorf("a probe that could not run is a warning, not a verdict: warned=%d failed=%d",
 			d.warned, d.failed)
 	}

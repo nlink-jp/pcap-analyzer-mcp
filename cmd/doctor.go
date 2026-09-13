@@ -84,7 +84,7 @@ happened.`,
 
 		// The mount probe needs a working image to run in.
 		if imageOK {
-			d.checkMounts(ctx, pc, tag, cfg.Workspace.AllowedPaths)
+			d.checkMounts(ctx, pc, tag)
 		}
 
 		return d.summarize()
@@ -99,32 +99,23 @@ type mountProber interface {
 
 // checkMounts reports which host directories can actually be bind-mounted.
 //
-// With allowed_paths configured, those are the directories that matter. With
-// it empty — the default — any readable file may be opened, so the useful
-// answer is which of the conventional macOS shares are reachable, i.e. where
-// a capture has to live.
-func (d *diagnosis) checkMounts(ctx context.Context, pc mountProber, image string, allowed []string) {
-	paths := allowed
-	label := "mount (allowed_paths)"
-	if len(paths) == 0 {
-		if runtime.GOOS != "darwin" {
-			d.pass("mount", "allowed_paths is empty; bind mounts are unrestricted on this host")
-			return
-		}
-		paths = []string{"/Users", "/private/tmp", "/var/folders"}
-		label = "mount (default shares)"
+// Any readable capture may be opened (ADR-0008 deleted the operator
+// allowlist), so the useful answer is which of the conventional macOS shares
+// reach the podman VM — that is, where a capture has to live for the mount to
+// work at all.
+func (d *diagnosis) checkMounts(ctx context.Context, pc mountProber, image string) {
+	if runtime.GOOS != "darwin" {
+		d.pass("mount", "bind mounts are unrestricted on this host")
+		return
 	}
-
-	for _, p := range paths {
+	const label = "mount (default shares)"
+	for _, p := range []string{"/Users", "/private/tmp", "/var/folders"} {
 		ok, reason, err := pc.CanMount(ctx, image, p)
 		switch {
 		case err != nil:
 			d.warn(label, p+": "+err.Error())
 		case ok:
 			d.pass(label, p)
-		case len(allowed) > 0:
-			// The operator named this path, so an unreachable one is a fault.
-			d.fail(label, p+" cannot be bind-mounted"+reasonSuffix(reason))
 		default:
 			d.warn(label, p+" is not reachable"+reasonSuffix(reason))
 		}

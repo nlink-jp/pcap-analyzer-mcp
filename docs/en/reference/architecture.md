@@ -56,7 +56,7 @@ Following `feedback_single_binary_subcommand`, one binary hosts four subcommands
 
 | Boundary | Content |
 |---|---|
-| Agent → server | Tool arguments. `workspace_id` syntax is validated; paths are symlink-resolved and checked against `allowed_paths` |
+| Agent → server | Tool arguments. `workspace_id` syntax is validated; `work_dir` is validated (absolute, exists, writable, not a system or credential location); `pcap_path` is symlink-resolved and refused only if it lands in the blacklist |
 | Server → container | `podman run` arguments. Mounts are assembled by the server; there is no path by which the agent specifies an arbitrary mount |
 | **pcap bytes → tshark** | **The most dangerous boundary.** Dissectors interpret attacker-controlled data. Contained by `network=none` / non-root / `--cap-drop=ALL` / read-only mount |
 | **tshark output → agent** | **The second most dangerous boundary.** Payload is attacker-controlled text, isolated in nonce XML (ADR-0007) |
@@ -65,10 +65,10 @@ Because `/evidence/capture` is read-only, **the original evidence cannot be modi
 
 ## 3. Data flow (happy path)
 
-### 3.1 create_workspace(pcap_path, workspace_dir, async?)
+### 3.1 create_workspace(pcap_path, work_dir, async?)
 
-1. Verify `workspace_dir` is writable; symlink-resolve `pcap_path` and check `allowed_paths`
-2. Generate a `workspace_id` (pcap basename + short hash) and create `<workspace_dir>/<id>/work/{tmp,out,out/objects}`
+1. Resolve and validate `work_dir` (argument, then request `_meta`, then error); symlink-resolve `pcap_path` and check the blacklist
+2. Generate a `workspace_id` (pcap basename + short hash) and create `<work_dir>/<id>/work/{tmp,out,out/objects}`
 3. Compute the pcap's **SHA-256** on the host
 4. Run `podman run --rm -v <pcap>:/evidence/capture:ro -v <ws>/work:/work <image> sh -c 'tshark --version; echo <delimiter>; capinfos -T -m -Q <selected fields> /evidence/capture'` — the tshark version and capinfos come from **one container start**
 5. Obtain the image ID via `podman image inspect` (no container)
@@ -123,7 +123,7 @@ Delete the directory. With `dry_run`, return only the target paths and disk usag
 ### 4.2 On disk (persistent)
 
 ```
-<workspace_dir>/<workspace_id>/
+<work_dir>/<workspace_id>/
 ├── meta.json     # pcap path / sha256 / capinfos / tshark version / image digest
 └── work/
     ├── tmp/            # tshark TMPDIR
@@ -165,13 +165,13 @@ Workspaces remain on disk. On the next connection they are discoverable via `lis
 
 ### 6.1 Host file access
 
-- `pcap_path` is checked against `allowed_paths` after symlink resolution (default empty = unrestricted, ADR-0004)
-- `workspace_dir` is checked only for writability
+- `pcap_path` is symlink-resolved and refused only inside the in-code blacklist of credential and agent-control locations (ADR-0008). There is no operator allowlist; bounding the process itself is a sandboxing proxy's job
+- `work_dir` is checked only for writability
 - Mount targets are determined by the server; the agent cannot specify them
 
 ### 6.2 workspace_id validation
 
-`^[a-zA-Z0-9_-]{1,64}$`. Path-traversal defense is applied twice: syntax validation, then re-verification that the joined path stays under `workspace_dir`.
+`^[a-zA-Z0-9_-]{1,64}$`. Path-traversal defense is applied twice: syntax validation, then re-verification that the joined path stays under `work_dir`.
 
 ### 6.3 Container runtime restrictions
 

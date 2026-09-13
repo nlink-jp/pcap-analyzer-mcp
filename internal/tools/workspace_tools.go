@@ -8,7 +8,6 @@ import (
 
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/job"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/mcpserver"
-	"github.com/nlink-jp/pcap-analyzer-mcp/internal/toolerr"
 	"github.com/nlink-jp/pcap-analyzer-mcp/runtime"
 )
 
@@ -17,9 +16,9 @@ func bytesReader(b []byte) io.Reader { return bytes.NewReader(b) }
 // --- create_workspace -------------------------------------------------------
 
 type createWorkspaceArgs struct {
-	PcapPath     string `json:"pcap_path"`
-	WorkspaceDir string `json:"workspace_dir"`
-	Async        bool   `json:"async"`
+	PcapPath string `json:"pcap_path"`
+	WorkDir  string `json:"work_dir"`
+	Async    bool   `json:"async"`
 }
 
 func (d *Deps) createWorkspace() registration {
@@ -34,10 +33,10 @@ func (d *Deps) createWorkspace() registration {
   "type": "object",
   "properties": {
     "pcap_path": {"type": "string", "description": "Absolute host path to a .pcap or .pcapng file."},
-    "workspace_dir": {"type": "string", "description": "Absolute host directory you can write to. Analysis output is written under it."},
+    ` + workDirProp + `,
     "async": {"type": "boolean", "description": "Run in the background and return a job_id immediately. Use for large captures: a full pass takes minutes and would otherwise hit your request timeout. Poll with check_job."}
   },
-  "required": ["pcap_path", "workspace_dir"],
+  "required": ["pcap_path", "work_dir"],
   "additionalProperties": false
 }`),
 		},
@@ -46,19 +45,23 @@ func (d *Deps) createWorkspace() registration {
 			if err := decode(raw, &a); err != nil {
 				return nil, err
 			}
-			if a.WorkspaceDir == "" {
-				return nil, toolerr.New(toolerr.CodeMissingArgument, "workspace_dir is required")
+			// Validation stays synchronous (ADR-0006): a work directory the
+			// caller cannot read back must fail now, not inside a job whose
+			// id has already been handed out.
+			workDir, err := d.resolveWorkDir(ctx, a.WorkDir)
+			if err != nil {
+				return nil, err
 			}
 			// Reading a large capture end to end is exactly the case async
 			// exists for, so it is offered here too.
 			return d.dispatch(ctx, a.Async, "create_workspace",
 				func(runCtx context.Context, report func(job.Progress)) (any, error) {
 					report(job.Progress{Phase: "reading", Note: "hashing and reading capture metadata"})
-					ws, err := d.Workspace.Create(runCtx, a.PcapPath, a.WorkspaceDir)
+					ws, err := d.Workspace.Create(runCtx, a.PcapPath, workDir)
 					if err != nil {
 						return nil, err
 					}
-					return describePayload(ws.ID, ws.Dir, ws.Meta, nil), nil
+					return describePayload(ws, nil), nil
 				})
 		},
 	}
@@ -67,8 +70,8 @@ func (d *Deps) createWorkspace() registration {
 // --- describe_workspace -----------------------------------------------------
 
 type workspaceRefArgs struct {
-	WorkspaceID  string `json:"workspace_id"`
-	WorkspaceDir string `json:"workspace_dir"`
+	WorkspaceID string `json:"workspace_id"`
+	WorkDir     string `json:"work_dir"`
 }
 
 func (d *Deps) describeWorkspace() registration {
@@ -81,17 +84,17 @@ func (d *Deps) describeWorkspace() registration {
 				"payload extraction.",
 			InputSchema: json.RawMessage(workspaceRefSchema),
 		},
-		handler: func(_ context.Context, raw json.RawMessage) (any, error) {
+		handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
 			var a workspaceRefArgs
 			if err := decode(raw, &a); err != nil {
 				return nil, err
 			}
-			ws, err := d.loadWorkspace(a.WorkspaceID, a.WorkspaceDir)
+			ws, err := d.loadWorkspace(ctx, a.WorkspaceID, a.WorkDir)
 			if err != nil {
 				return nil, err
 			}
 			outputs, _ := listOutputs(ws.OutDir())
-			return describePayload(ws.ID, ws.Dir, ws.Meta, outputs), nil
+			return describePayload(ws, outputs), nil
 		},
 	}
 }
@@ -100,42 +103,43 @@ const workspaceRefSchema = `{
   "type": "object",
   "properties": {
     "workspace_id": {"type": "string", "description": "From create_workspace."},
-    "workspace_dir": {"type": "string", "description": "The same workspace_dir the workspace was created under."}
+    "work_dir": {"type": "string", "description": "The same work_dir the workspace was created under."}
   },
-  "required": ["workspace_id", "workspace_dir"],
+  "required": ["workspace_id", "work_dir"],
   "additionalProperties": false
 }`
 
 // --- list_workspaces --------------------------------------------------------
 
 type listWorkspacesArgs struct {
-	WorkspaceDir string `json:"workspace_dir"`
+	WorkDir string `json:"work_dir"`
 }
 
 func (d *Deps) listWorkspaces() registration {
 	return registration{
 		desc: mcpserver.Tool{
 			Name: "list_workspaces",
-			Description: "List the captures already opened under a workspace_dir. Workspaces live " +
+			Description: "List the captures already opened under a work_dir. Workspaces live " +
 				"on disk, so this finds ones created in earlier sessions too.",
 			InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
-    "workspace_dir": {"type": "string", "description": "Absolute host directory to scan."}
+    "work_dir": {"type": "string", "description": "Absolute host directory to scan."}
   },
-  "required": ["workspace_dir"],
+  "required": ["work_dir"],
   "additionalProperties": false
 }`),
 		},
-		handler: func(_ context.Context, raw json.RawMessage) (any, error) {
+		handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
 			var a listWorkspacesArgs
 			if err := decode(raw, &a); err != nil {
 				return nil, err
 			}
-			if a.WorkspaceDir == "" {
-				return nil, toolerr.New(toolerr.CodeMissingArgument, "workspace_dir is required")
+			workDir, err := d.resolveWorkDir(ctx, a.WorkDir)
+			if err != nil {
+				return nil, err
 			}
-			items, err := d.Workspace.List(a.WorkspaceDir)
+			items, err := d.Workspace.List(workDir)
 			if err != nil {
 				return nil, err
 			}
@@ -147,9 +151,9 @@ func (d *Deps) listWorkspaces() registration {
 // --- delete_workspace -------------------------------------------------------
 
 type deleteWorkspaceArgs struct {
-	WorkspaceID  string `json:"workspace_id"`
-	WorkspaceDir string `json:"workspace_dir"`
-	DryRun       bool   `json:"dry_run"`
+	WorkspaceID string `json:"workspace_id"`
+	WorkDir     string `json:"work_dir"`
+	DryRun      bool   `json:"dry_run"`
 }
 
 func (d *Deps) deleteWorkspace() registration {
@@ -162,29 +166,30 @@ func (d *Deps) deleteWorkspace() registration {
   "type": "object",
   "properties": {
     "workspace_id": {"type": "string"},
-    "workspace_dir": {"type": "string"},
+    ` + workDirProp + `,
     "dry_run": {"type": "boolean", "description": "Report what would be removed without removing it."}
   },
-  "required": ["workspace_id", "workspace_dir"],
+  "required": ["workspace_id", "work_dir"],
   "additionalProperties": false
 }`),
 		},
-		handler: func(_ context.Context, raw json.RawMessage) (any, error) {
+		handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
 			var a deleteWorkspaceArgs
 			if err := decode(raw, &a); err != nil {
 				return nil, err
 			}
-			if a.WorkspaceDir == "" {
-				return nil, toolerr.New(toolerr.CodeMissingArgument, "workspace_dir is required")
+			workDir, err := d.resolveWorkDir(ctx, a.WorkDir)
+			if err != nil {
+				return nil, err
 			}
 			if a.DryRun {
-				p, err := d.Workspace.PreviewDelete(a.WorkspaceID, a.WorkspaceDir)
+				p, err := d.Workspace.PreviewDelete(a.WorkspaceID, workDir)
 				if err != nil {
 					return nil, err
 				}
 				return map[string]any{"dry_run": true, "would_delete": p}, nil
 			}
-			p, err := d.Workspace.Delete(a.WorkspaceID, a.WorkspaceDir)
+			p, err := d.Workspace.Delete(a.WorkspaceID, workDir)
 			if err != nil {
 				return nil, err
 			}

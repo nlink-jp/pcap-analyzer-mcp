@@ -64,13 +64,23 @@ MCP クライアントにサーバーとして登録します。
 見つけ、display filter で絞り込む、というものです。
 
 ```
-create_workspace(pcap_path, workspace_dir)  →  workspace_id, sha256, 要約
+create_workspace(pcap_path, work_dir)  →  workspace_id, sha256, 要約
 describe_workspace(workspace_id)            →  パケット数・時間範囲・snaplen
 list_conversations(workspace_id)            →  誰と誰が話したか（+ストリーム番号）
 query_packets(workspace_id, filter, fields) →  行をインライン、または JSONL ファイル
 follow_stream(workspace_id, ...)            →  実際に流れたバイト列
 extract_objects(workspace_id, "http")       →  ファイル抽出（defang + ハッシュ）
 ```
+
+呼び出しには必ず `work_dir` —— **自分が読み戻せる**ディレクトリの絶対パス、通常は
+セッションや作業用のディレクトリ —— も渡します。ワークスペースは
+`<work_dir>/<workspace_id>/` で、インラインに収まらない結果もそこに書かれます。
+`(work_dir, workspace_id)` の対がワークスペースの住所そのもの（このサーバーは再起動を
+またいで何も覚えません）。必須で、既定値はありません。
+
+キャプチャ自体は読める場所ならどこにあっても構いません —— read-only でマウントされ、
+コピーもされません。拒否されるのは `~/.ssh` や `~/.aws` のような資格情報・エージェント
+制御ファイルの位置だけです。
 
 ### ツール一覧
 
@@ -79,7 +89,7 @@ extract_objects(workspace_id, "http")       →  ファイル抽出（defang + �
 | `get_usage` | ワークスペースモデル・出力契約・エラー回復 |
 | `create_workspace` | キャプチャを開く。SHA-256 / `capinfos` / tshark 版数を記録 |
 | `describe_workspace` | キャッシュ済みメタ情報 — コンテナを起動しない |
-| `list_workspaces` | `workspace_dir` 配下のワークスペース一覧 |
+| `list_workspaces` | `work_dir` 配下のワークスペース一覧 |
 | `delete_workspace` | ワークスペース削除（`dry_run` あり） |
 | `describe_runtime` | イメージ digest・tshark 版数・対応オブジェクトプロトコル |
 | `protocol_hierarchy` | このキャプチャに何が流れているか |

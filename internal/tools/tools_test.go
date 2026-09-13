@@ -127,9 +127,9 @@ func TestRegisterInstallsEveryTool(t *testing.T) {
 func TestUnknownArgumentIsRejected(t *testing.T) {
 	d := newDeps(&fakeRunner{})
 	_, err := call(t, d, "query_packets", map[string]any{
-		"workspace_id":  "x-00000000",
-		"workspace_dir": t.TempDir(),
-		"filters":       "tcp",
+		"workspace_id": "x-00000000",
+		"work_dir":     t.TempDir(),
+		"filters":      "tcp",
 	})
 	if err == nil {
 		t.Fatal("want an error for an unknown argument")
@@ -139,23 +139,26 @@ func TestUnknownArgumentIsRejected(t *testing.T) {
 	}
 }
 
-func TestMissingWorkspaceDir(t *testing.T) {
+// Every tool that addresses a workspace needs the caller's work directory, and
+// there is no default to fall through to (ADR-0008 §2). The code says which
+// part of the contract failed, so a caller can act on it without parsing prose.
+func TestMissingWorkDir(t *testing.T) {
 	d := newDeps(&fakeRunner{})
 	for _, name := range []string{"describe_workspace", "list_workspaces", "delete_workspace"} {
-		args := map[string]any{"workspace_id": "x-00000000", "workspace_dir": ""}
+		args := map[string]any{"workspace_id": "x-00000000", "work_dir": ""}
 		if name == "list_workspaces" {
-			args = map[string]any{"workspace_dir": ""}
+			args = map[string]any{"work_dir": ""}
 		}
 		_, err := call(t, d, name, args)
-		if !errors.Is(err, toolerr.New(toolerr.CodeMissingArgument, "")) {
-			t.Errorf("%s: want missing_argument, got %v", name, err)
+		if !errors.Is(err, toolerr.New(toolerr.CodeWorkDirRequired, "")) {
+			t.Errorf("%s: want work_dir_required, got %v", name, err)
 		}
 	}
 }
 
 func TestListWorkspacesOnEmptyDir(t *testing.T) {
 	d := newDeps(&fakeRunner{})
-	out, err := call(t, d, "list_workspaces", map[string]any{"workspace_dir": t.TempDir()})
+	out, err := call(t, d, "list_workspaces", map[string]any{"work_dir": t.TempDir()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +204,7 @@ func TestGetUsageMentionsTheContractItPromises(t *testing.T) {
 func TestTransportValidation(t *testing.T) {
 	d := newDeps(&fakeRunner{})
 	_, err := call(t, d, "list_conversations", map[string]any{
-		"workspace_id": "x-00000000", "workspace_dir": t.TempDir(), "transport": "sctp",
+		"workspace_id": "x-00000000", "work_dir": t.TempDir(), "transport": "sctp",
 	})
 	if !errors.Is(err, toolerr.New(toolerr.CodeInvalidArguments, "")) {
 		t.Errorf("want invalid_arguments for an unsupported transport, got %v", err)
@@ -211,7 +214,7 @@ func TestTransportValidation(t *testing.T) {
 func TestFormatValidation(t *testing.T) {
 	d := newDeps(&fakeRunner{})
 	_, err := call(t, d, "query_packets", map[string]any{
-		"workspace_id": "x-00000000", "workspace_dir": t.TempDir(), "format": "parquet",
+		"workspace_id": "x-00000000", "work_dir": t.TempDir(), "format": "parquet",
 	})
 	if !errors.Is(err, toolerr.New(toolerr.CodeInvalidArguments, "")) {
 		t.Errorf("parquet is not offered (ADR-0003) and must be refused: %v", err)
@@ -223,7 +226,7 @@ func TestFormatValidation(t *testing.T) {
 func TestUnknownWorkspace(t *testing.T) {
 	d := newDeps(&fakeRunner{})
 	_, err := call(t, d, "describe_workspace", map[string]any{
-		"workspace_id": "absent-00000000", "workspace_dir": t.TempDir(),
+		"workspace_id": "absent-00000000", "work_dir": t.TempDir(),
 	})
 	if !errors.Is(err, toolerr.New(toolerr.CodeWorkspaceNotFound, "")) {
 		t.Errorf("want workspace_not_found, got %v", err)
@@ -237,7 +240,11 @@ func TestDescribePayloadFlagsTruncation(t *testing.T) {
 		Capture: workspace.Capture{Name: "c.pcap"},
 		Info:    workspace.CaptureInfo{Truncated: true},
 	}
-	p := describePayload("id", "/dir", meta, nil)
+	ws := &workspace.Workspace{ID: "id", Dir: "/work/id", Root: "/work", Meta: meta}
+	p := describePayload(ws, nil)
+	if p["work_dir"] != "/work" {
+		t.Errorf("work_dir = %v, want the caller's root echoed back", p["work_dir"])
+	}
 	if p["truncated"] != true {
 		t.Error("truncated must be restated at the top level")
 	}
@@ -246,8 +253,8 @@ func TestDescribePayloadFlagsTruncation(t *testing.T) {
 		t.Errorf("the note must stop the agent retrying: %q", note)
 	}
 
-	whole := describePayload("id", "/dir",
-		&workspace.Meta{Capture: workspace.Capture{}, Info: workspace.CaptureInfo{}}, nil)
+	whole := describePayload(&workspace.Workspace{ID: "id", Dir: "/work/id", Root: "/work",
+		Meta: &workspace.Meta{Capture: workspace.Capture{}, Info: workspace.CaptureInfo{}}}, nil)
 	if _, ok := whole["payload_note"]; ok {
 		t.Error("an intact capture needs no warning")
 	}

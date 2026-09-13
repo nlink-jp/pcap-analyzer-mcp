@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/toolerr"
+	"github.com/nlink-jp/pcap-analyzer-mcp/internal/workdir"
 )
 
 // workspaceIDPattern constrains an id to characters that are safe both as a
@@ -39,24 +40,30 @@ func WorkspacePath(root, id string) (string, error) {
 	}
 	absRoot, err := filepath.Abs(root)
 	if err != nil {
-		return "", toolerr.Newf(toolerr.CodeInvalidArguments, "workspace_dir: %v", err)
+		return "", toolerr.Newf(toolerr.CodeInvalidArguments, "work_dir: %v", err)
 	}
 	joined := filepath.Join(absRoot, id)
 	if filepath.Dir(joined) != filepath.Clean(absRoot) {
 		return "", toolerr.Newf(toolerr.CodeInvalidWorkspaceID,
-			"workspace_id escapes workspace_dir").
+			"workspace_id escapes work_dir").
 			WithDetails(map[string]any{"workspace_id": id})
 	}
 	return joined, nil
 }
 
-// ResolveAndCheck resolves path (following symlinks) and verifies it falls
-// under one of allowedPaths.
+// ResolveInput resolves a capture path the caller named (following symlinks)
+// and refuses it only if it lands in a blacklisted location.
 //
-// An empty allowedPaths means unrestricted (ADR-0004): the list is a guardrail
-// an operator opts into, not a sandbox boundary. Resolution happens first so a
-// symlink cannot point out of an allowed directory.
-func ResolveAndCheck(path string, allowedPaths []string) (string, error) {
+// There is no operator allowlist (ADR-0008 §4). The one that existed could not
+// express what it was for — prefix matching has no per-repository granularity,
+// so covering a work root meant listing the home directory, which admits the
+// files the list was there to keep out. What remains is a fixed blacklist of
+// credential and agent-control locations, and it is a floor, not a boundary:
+// bounding what this process may touch at all is a sandboxing proxy's job.
+//
+// Resolution happens first, so a symlink planted anywhere cannot point into a
+// blacklisted directory (the check ADR-0004 asked for, kept).
+func ResolveInput(path string) (string, error) {
 	if path == "" {
 		return "", toolerr.New(toolerr.CodeMissingArgument, "pcap_path is required")
 	}
@@ -69,30 +76,15 @@ func ResolveAndCheck(path string, allowedPaths []string) (string, error) {
 	if err != nil {
 		return "", toolerr.Newf(toolerr.CodePcapUnreadable, "%v", err)
 	}
-	if len(allowedPaths) == 0 {
-		return resolved, nil
+	// Both spellings go to the check: a blacklisted directory may itself be a
+	// symlink (see workdir.Sensitive), so the resolved form alone is not
+	// enough, and the unresolved form alone would miss a planted link.
+	if why := workdir.Sensitive(path, resolved); why != "" {
+		return "", toolerr.Newf(toolerr.CodePathNotAllowed,
+			"%s is refused: %s", path, why).
+			WithDetails(map[string]any{"pcap_path": path, "resolved": resolved})
 	}
-	for _, allowed := range allowedPaths {
-		// An allowed_paths entry may itself be a symlink; resolve it too, or a
-		// legitimate path would be rejected for a spurious mismatch.
-		base, err := filepath.EvalSymlinks(allowed)
-		if err != nil {
-			base = allowed
-		}
-		if base, err = filepath.Abs(base); err != nil {
-			continue
-		}
-		if resolved == base || strings.HasPrefix(resolved, base+string(filepath.Separator)) {
-			return resolved, nil
-		}
-	}
-	return "", toolerr.Newf(toolerr.CodePathNotAllowed,
-		"%s is outside allowed_paths", path).
-		WithDetails(map[string]any{
-			"pcap_path":     path,
-			"resolved":      resolved,
-			"allowed_paths": allowedPaths,
-		})
+	return resolved, nil
 }
 
 // DeriveWorkspaceID builds a stable, readable id for a capture.

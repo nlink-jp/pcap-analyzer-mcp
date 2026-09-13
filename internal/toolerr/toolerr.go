@@ -71,7 +71,16 @@ const (
 
 	// Host filesystem access.
 	CodePathNotAllowed = "path_not_allowed"
-	CodePcapUnreadable = "pcap_unreadable"
+
+	// Work directory, per organization ADR-021 / ADR-0008. Split out so a
+	// caller can tell "you did not pass one" from "it is not there" from
+	// "this server refuses to write there".
+	CodeWorkDirRequired    = "work_dir_required"
+	CodeWorkDirInvalid     = "work_dir_invalid"
+	CodeWorkDirNotFound    = "work_dir_not_found"
+	CodeWorkDirNotWritable = "work_dir_not_writable"
+	CodeWorkDirDenied      = "work_dir_denied"
+	CodePcapUnreadable     = "pcap_unreadable"
 
 	// Analysis.
 	CodeInvalidDisplayFilter = "invalid_display_filter"

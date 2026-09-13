@@ -75,7 +75,7 @@ func (w *Workspace) Mounts() []podman.Mount {
 // container start for capinfos — so that describe_workspace afterwards is a
 // file read.
 func (m *Manager) Create(ctx context.Context, pcapPath, root string) (*Workspace, error) {
-	resolved, err := ResolveAndCheck(pcapPath, m.cfg.Workspace.AllowedPaths)
+	resolved, err := ResolveInput(pcapPath)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func (m *Manager) Load(id, root string) (*Workspace, error) {
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, toolerr.Newf(toolerr.CodeWorkspaceNotFound,
-				"no workspace %q under the given workspace_dir", id).
+				"no workspace %q under the given work_dir", id).
 				WithDetails(map[string]any{"workspace_id": id})
 		}
 		return nil, toolerr.Newf(toolerr.CodeWorkspaceNotFound, "%v", err)
@@ -229,7 +229,7 @@ func (m *Manager) List(root string) ([]Summary, error) {
 		if os.IsNotExist(err) {
 			return []Summary{}, nil
 		}
-		return nil, toolerr.Newf(toolerr.CodeInvalidArguments, "read workspace_dir: %v", err)
+		return nil, toolerr.Newf(toolerr.CodeInvalidArguments, "read work_dir: %v", err)
 	}
 
 	out := make([]Summary, 0, len(entries))

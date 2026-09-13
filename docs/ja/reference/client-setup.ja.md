@@ -71,7 +71,7 @@ macOS では podman が VM 内で動くため、**VM が共有しているパス
 `doctor` はこれを推測しません。実際に read-only マウントを試して podman の答えを
 そのまま報告します（`podman machine inspect` が共有パス一覧を公開していないため）。
 
-`workspace_dir` も同じ制約を受けます。ホームディレクトリ配下が素直な選択です。
+`work_dir` も同じ制約を受けます。ホームディレクトリ配下が素直な選択です。
 
 ```
 ~/pcap-workspaces/
@@ -126,7 +126,7 @@ stdout には絶対にログを出さないでください。そこは JSON-RPC 
 `query_packets` に `limit: 0` を渡すと、該当パケット全件をワークスペースへ JSONL
 で書き出します。DuckDB がそのまま読める形式です。SQL をかけたい場合は
 [data-toolbox-mcp](https://github.com/nlink-jp/data-toolbox-mcp) も登録し、
-ワークスペースディレクトリを向こうの `allowed_paths` に加えてください。
+work ディレクトリを向こうの `allowed_paths` に加えてください。
 
 **渡す前にフィルタで絞ること。** data-toolbox の `load_data` は渡されたファイルを
 コピーするので、大きいキャプチャの無絞りエクスポートを渡すと全部複製されます。

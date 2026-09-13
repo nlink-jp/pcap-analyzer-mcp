@@ -62,7 +62,7 @@ func (d *Deps) checkJob() registration {
   "additionalProperties": false
 }`),
 		},
-		handler: func(_ context.Context, raw json.RawMessage) (any, error) {
+		handler: func(ctx context.Context, raw json.RawMessage) (any, error) {
 			var a checkJobArgs
 			if err := decode(raw, &a); err != nil {
 				return nil, err

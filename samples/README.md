@@ -43,7 +43,7 @@ workspace model, the result contract, and the error codes.
 ### 2. Open a capture
 
 ```
-create_workspace(pcap_path="$S/mixed.pcapng", workspace_dir="$WS")
+create_workspace(pcap_path="$S/mixed.pcapng", work_dir="$WS")
 ```
 
 Expect a `workspace_id`, a 64-character `sha256`, `packet_count: 4`, and

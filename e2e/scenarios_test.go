@@ -74,7 +74,7 @@ func TestStage2_OpenAndDescribe(t *testing.T) {
 	c, samples, ws := setup(t)
 
 	created := c.MustCall("create_workspace", map[string]any{
-		"pcap_path": filepath.Join(samples, "mixed.pcapng"), "workspace_dir": ws,
+		"pcap_path": filepath.Join(samples, "mixed.pcapng"), "work_dir": ws,
 	})
 	id, _ := created["workspace_id"].(string)
 	if id == "" {
@@ -84,7 +84,7 @@ func TestStage2_OpenAndDescribe(t *testing.T) {
 	// describe_workspace must answer from cache without a container, so it
 	// should be markedly faster than the create that populated it.
 	start := time.Now()
-	d := c.MustCall("describe_workspace", map[string]any{"workspace_id": id, "workspace_dir": ws})
+	d := c.MustCall("describe_workspace", map[string]any{"workspace_id": id, "work_dir": ws})
 	elapsed := time.Since(start)
 	t.Logf("describe_workspace took %s", elapsed)
 	if elapsed > 2*time.Second {
@@ -108,7 +108,7 @@ func TestStage3_SurveyTheCapture(t *testing.T) {
 	c, samples, ws := setup(t)
 	id := openSample(t, c, samples, ws, "mixed.pcapng")
 
-	h := c.MustCall("protocol_hierarchy", map[string]any{"workspace_id": id, "workspace_dir": ws})
+	h := c.MustCall("protocol_hierarchy", map[string]any{"workspace_id": id, "work_dir": ws})
 	tree, _ := h["hierarchy"].([]any)
 	if len(tree) == 0 {
 		t.Fatalf("empty hierarchy: %v", h)
@@ -117,7 +117,7 @@ func TestStage3_SurveyTheCapture(t *testing.T) {
 		t.Errorf("root = %v", tree[0])
 	}
 
-	conv := c.MustCall("list_conversations", map[string]any{"workspace_id": id, "workspace_dir": ws})
+	conv := c.MustCall("list_conversations", map[string]any{"workspace_id": id, "work_dir": ws})
 	if conv["total"].(float64) != 2 {
 		t.Errorf("total conversations = %v, want 2", conv["total"])
 	}
@@ -136,7 +136,7 @@ func TestStage4_QueryAndNarrow(t *testing.T) {
 	id := openSample(t, c, samples, ws, "mixed.pcapng")
 
 	all := c.MustCall("query_packets", map[string]any{
-		"workspace_id": id, "workspace_dir": ws, "filter": "tcp",
+		"workspace_id": id, "work_dir": ws, "filter": "tcp",
 	})
 	if all["matched"].(float64) != 4 {
 		t.Errorf("matched = %v, want 4", all["matched"])
@@ -148,7 +148,7 @@ func TestStage4_QueryAndNarrow(t *testing.T) {
 	// matched must reflect the filter, not the returned rows: that is what
 	// tells an agent whether to narrow further.
 	limited := c.MustCall("query_packets", map[string]any{
-		"workspace_id": id, "workspace_dir": ws, "filter": "tcp", "limit": 1,
+		"workspace_id": id, "work_dir": ws, "filter": "tcp", "limit": 1,
 	})
 	if limited["returned"].(float64) != 1 {
 		t.Errorf("returned = %v", limited["returned"])
@@ -162,7 +162,7 @@ func TestStage4_QueryAndNarrow(t *testing.T) {
 
 	// A filter that matches nothing is an answer, not a failure.
 	none := c.MustCall("query_packets", map[string]any{
-		"workspace_id": id, "workspace_dir": ws, "filter": "tcp.port == 9999",
+		"workspace_id": id, "work_dir": ws, "filter": "tcp.port == 9999",
 	})
 	if none["matched"].(float64) != 0 {
 		t.Errorf("matched = %v, want 0", none["matched"])
@@ -179,7 +179,7 @@ func TestStage5_BadFilterExplainsItself(t *testing.T) {
 	id := openSample(t, c, samples, ws, "mixed.pcapng")
 
 	p, isErr := c.Call("query_packets", map[string]any{
-		"workspace_id": id, "workspace_dir": ws, "filter": "tcp.flags.zyn == 1",
+		"workspace_id": id, "work_dir": ws, "filter": "tcp.flags.zyn == 1",
 	})
 	if !isErr {
 		t.Fatalf("a bad filter must be an error: %v", p)
@@ -202,7 +202,7 @@ func TestStage6_PayloadIsFramed(t *testing.T) {
 	id := openSample(t, c, samples, ws, "suspicious-download.pcapng")
 
 	f := c.MustCall("follow_stream", map[string]any{
-		"workspace_id": id, "workspace_dir": ws, "stream": 0,
+		"workspace_id": id, "work_dir": ws, "stream": 0,
 	})
 	dirs := f["directions"].([]any)
 	if len(dirs) != 2 {
@@ -236,7 +236,7 @@ func TestStage7_ObjectsAreDefanged(t *testing.T) {
 	id := openSample(t, c, samples, ws, "suspicious-download.pcapng")
 
 	out := c.MustCall("extract_objects", map[string]any{
-		"workspace_id": id, "workspace_dir": ws, "protocol": "http",
+		"workspace_id": id, "work_dir": ws, "protocol": "http",
 	})
 	if out["count"].(float64) < 1 {
 		t.Fatalf("no objects extracted: %v", out)
@@ -277,7 +277,7 @@ func TestStage8_TruncatedCaptureRefusesPayloadTools(t *testing.T) {
 	c, samples, ws := setup(t)
 	id := openSample(t, c, samples, ws, "truncated.pcapng")
 
-	d := c.MustCall("describe_workspace", map[string]any{"workspace_id": id, "workspace_dir": ws})
+	d := c.MustCall("describe_workspace", map[string]any{"workspace_id": id, "work_dir": ws})
 	if d["truncated"] != true {
 		t.Fatalf("truncated.pcapng must be detected as truncated: %v", d["info"])
 	}
@@ -286,7 +286,7 @@ func TestStage8_TruncatedCaptureRefusesPayloadTools(t *testing.T) {
 	}
 
 	for _, tool := range []string{"follow_stream", "extract_objects"} {
-		args := map[string]any{"workspace_id": id, "workspace_dir": ws}
+		args := map[string]any{"workspace_id": id, "work_dir": ws}
 		if tool == "follow_stream" {
 			args["stream"] = 0
 		} else {
@@ -303,7 +303,7 @@ func TestStage8_TruncatedCaptureRefusesPayloadTools(t *testing.T) {
 	}
 
 	// Metadata tools must still work — that is the point of saying which.
-	q := c.MustCall("query_packets", map[string]any{"workspace_id": id, "workspace_dir": ws})
+	q := c.MustCall("query_packets", map[string]any{"workspace_id": id, "work_dir": ws})
 	if q["matched"].(float64) != 4 {
 		t.Errorf("metadata tools should still work on a truncated capture: %v", q)
 	}
@@ -314,7 +314,7 @@ func TestStage9_AsyncRoundTrip(t *testing.T) {
 	id := openSample(t, c, samples, ws, "mixed.pcapng")
 
 	env := c.MustCall("query_packets", map[string]any{
-		"workspace_id": id, "workspace_dir": ws, "filter": "tcp", "async": true,
+		"workspace_id": id, "work_dir": ws, "filter": "tcp", "async": true,
 	})
 	jobID, _ := env["job_id"].(string)
 	if jobID == "" {
@@ -343,13 +343,13 @@ func TestStage10_WorkspaceLifecycle(t *testing.T) {
 	pcap := filepath.Join(samples, "web-session.pcapng")
 	id := openSample(t, c, samples, ws, "web-session.pcapng")
 
-	list := c.MustCall("list_workspaces", map[string]any{"workspace_dir": ws})
+	list := c.MustCall("list_workspaces", map[string]any{"work_dir": ws})
 	if list["count"].(float64) != 1 {
 		t.Errorf("count = %v", list["count"])
 	}
 
 	preview := c.MustCall("delete_workspace", map[string]any{
-		"workspace_id": id, "workspace_dir": ws, "dry_run": true,
+		"workspace_id": id, "work_dir": ws, "dry_run": true,
 	})
 	if preview["dry_run"] != true {
 		t.Errorf("dry_run not honoured: %v", preview)
@@ -358,7 +358,7 @@ func TestStage10_WorkspaceLifecycle(t *testing.T) {
 		t.Error("dry_run must not remove anything")
 	}
 
-	c.MustCall("delete_workspace", map[string]any{"workspace_id": id, "workspace_dir": ws})
+	c.MustCall("delete_workspace", map[string]any{"workspace_id": id, "work_dir": ws})
 	if _, err := os.Stat(filepath.Join(ws, id)); !os.IsNotExist(err) {
 		t.Error("workspace should be gone")
 	}
@@ -393,7 +393,7 @@ func TestStage11_RuntimeDisclosure(t *testing.T) {
 func openSample(t *testing.T, c *Client, samples, ws, name string) string {
 	t.Helper()
 	created := c.MustCall("create_workspace", map[string]any{
-		"pcap_path": filepath.Join(samples, name), "workspace_dir": ws,
+		"pcap_path": filepath.Join(samples, name), "work_dir": ws,
 	})
 	id, _ := created["workspace_id"].(string)
 	if id == "" {

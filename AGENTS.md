@@ -44,6 +44,7 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 | `internal/jsonrpc/` | JSON-RPC 2.0 types | B ✅ |
 | `internal/mcpserver/` | MCP protocol (initialize, tools/list, tools/call) | B ✅ |
 | `internal/toolerr/` | Structured `{code, message, details}` tool errors | B ✅ |
+| `internal/workdir/` | The caller's work directory: argument → request `_meta` → error, its validation, and the input blacklist (ADR-0008) | — |
 | `internal/workspace/` | Workspace creation, `meta.json`, capinfos parsing, path validation | D ✅ |
 | `internal/tshark/` | tshark argument assembly and output parsing | E ✅ |
 | `internal/output/` | The output contract: byte threshold, `matched`, `sample`, JSONL | E ✅ |
@@ -60,7 +61,8 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 - **ADR-0001**: tshark is the backend. Display filters pass through from the agent verbatim. Zeek is deferred, and adopting it would mean *new tools*, not a backend swap.
 - **ADR-0002**: Containers are **ephemeral, one per `podman run --rm` per call**. No persistent container, no `podman exec`, no orphan scanning. tshark is stateless, so there is nothing to persist.
 - **ADR-0003**: Lean image — `debian:12-slim` (digest-pinned) + `tshark` only, 274MB. No DuckDB, no Python, therefore **no parquet**; exports are JSONL / CSV. The dumpcap binary is deleted, so the image cannot capture.
-- **ADR-0004**: **1 pcap : 1 workspace.** The capture file itself is mounted `ro` at the fixed path `/evidence/capture` and never copied. `workspace_dir` is an argument, not config. `allowed_paths` is a guardrail (default: unrestricted), not a sandbox boundary.
+- **ADR-0004**: **1 pcap : 1 workspace.** The capture file itself is mounted `ro` at the fixed path `/evidence/capture` and never copied. The work directory is an argument, not config. (Its `allowed_paths` clause is superseded by ADR-0008.)
+- **ADR-0008**: The argument is **`work_dir`** — the absolute path of a directory the caller can read back — resolved from the argument, then the request's `_meta`, then an error. No server-owned default. `allowed_paths` is **deleted**; `pcap_path` may be anywhere except a fixed in-code blacklist of credential locations, which is a floor, not a boundary.
 - **ADR-0005**: Output contract — threshold in **bytes not rows**, response shape identical inline vs. file, `matched` always returned, `sample` attached for file results, large output is **JSONL not a JSON array**.
 - **ADR-0006**: Async for heavy tools only (`create_workspace`, `protocol_hierarchy`, `list_conversations`, `query_packets`, `extract_objects`). Validation stays synchronous. Jobs are in-memory; `job_not_found` means "just re-run it".
 - **ADR-0007**: Payload safety, all four in the same commit as the payload code — nonce XML isolation with the framing **first**, defang to `<sha256>.bin` mode 0600, payload never logged, ranged reads via `offset`/`length`.

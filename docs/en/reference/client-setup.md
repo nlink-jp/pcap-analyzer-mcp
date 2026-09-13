@@ -73,7 +73,7 @@ copied somewhere reachable.
 what podman said, because `podman machine inspect` does not expose the share
 list.
 
-The same applies to `workspace_dir`. Somewhere under your home directory is the
+The same applies to `work_dir`. Somewhere under your home directory is the
 straightforward choice:
 
 ```
@@ -130,7 +130,7 @@ the protocol.
 `query_packets` with `limit: 0` writes every matching packet to the workspace
 as JSONL, which DuckDB reads natively. To run SQL over it, register
 [data-toolbox-mcp](https://github.com/nlink-jp/data-toolbox-mcp) as well and
-add your workspace directory to its `allowed_paths`.
+add your work directory to its `allowed_paths`.
 
 Filter before exporting: data-toolbox's `load_data` copies the file it is
 given, so handing it an unfiltered export of a large capture copies the lot.

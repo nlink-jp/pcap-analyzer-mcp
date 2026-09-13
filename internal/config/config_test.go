@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -18,9 +19,6 @@ func TestLoadNoPathReturnsDefaults(t *testing.T) {
 	}
 	if cfg.Container.Limits.Network != "none" {
 		t.Errorf("network: got %q, want \"none\"", cfg.Container.Limits.Network)
-	}
-	if len(cfg.Workspace.AllowedPaths) != 0 {
-		t.Errorf("allowed_paths should default to unrestricted, got %v", cfg.Workspace.AllowedPaths)
 	}
 }
 
@@ -87,7 +85,6 @@ func TestValidateRejectsBadValues(t *testing.T) {
 		{"zero job concurrency", func(c *Config) { c.Jobs.MaxConcurrent = 0 }},
 		{"window smaller than default", func(c *Config) { c.Payload.FollowMaxWindowBytes = 1 }},
 		{"reassembly smaller than window", func(c *Config) { c.Payload.FollowMaxReassemblyBytes = 1 }},
-		{"relative allowed path", func(c *Config) { c.Workspace.AllowedPaths = []string{"captures"} }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -107,25 +104,46 @@ func TestValidateAcceptsDefaults(t *testing.T) {
 	}
 }
 
-func TestNormalizeExpandsHomeInAllowedPaths(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skip("no home directory in this environment")
-	}
-	cfg := Default()
-	cfg.Workspace.AllowedPaths = []string{"~/captures"}
-	cfg.normalize()
-
-	want := filepath.Join(home, "captures")
-	if cfg.Workspace.AllowedPaths[0] != want {
-		t.Errorf("allowed_paths[0]: got %q, want %q", cfg.Workspace.AllowedPaths[0], want)
-	}
-}
-
+// ExpandHome still has users (log.file); the allowed_paths one is gone with
+// the key (ADR-0008).
 func TestExpandHomeLeavesOtherPathsAlone(t *testing.T) {
 	for _, p := range []string{"", "/abs/path", "relative/path", "~user/dir"} {
 		if got := ExpandHome(p); got != p {
 			t.Errorf("ExpandHome(%q) = %q, want unchanged", p, got)
+		}
+	}
+}
+
+// A key this server does not read must stop it, not be ignored. The operator
+// wrote it meaning something; silence would let them believe it took effect.
+func TestLoadRejectsUnknownKeys(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte("[output]\ninlin_max_bytes = 1024\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("an unknown key must fail the load")
+	}
+	if !strings.Contains(err.Error(), "inlin_max_bytes") {
+		t.Errorf("the error must name the key, got %v", err)
+	}
+}
+
+// The one key that was actually removed gets told what happened to it, since
+// it was a guard and its silent disappearance is the worst outcome (ADR-0008).
+func TestLoadNamesTheRemovedAllowedPathsKey(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.toml")
+	if err := os.WriteFile(path, []byte("[workspace]\nallowed_paths = [\"/tmp\"]\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("a config still carrying allowed_paths must fail the load")
+	}
+	for _, want := range []string{"workspace.allowed_paths", "ADR-0008"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error should mention %q, got %v", want, err)
 		}
 	}
 }

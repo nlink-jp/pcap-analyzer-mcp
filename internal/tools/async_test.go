@@ -44,9 +44,9 @@ func TestAsyncIsOfferedExactlyWhereItShouldBe(t *testing.T) {
 func TestAsyncStillValidatesSynchronously(t *testing.T) {
 	d := newDeps(&fakeRunner{})
 	_, err := call(t, d, "query_packets", map[string]any{
-		"workspace_id":  "absent-00000000",
-		"workspace_dir": t.TempDir(),
-		"async":         true,
+		"workspace_id": "absent-00000000",
+		"work_dir":     t.TempDir(),
+		"async":        true,
 	})
 	if !errors.Is(err, toolerr.New(toolerr.CodeWorkspaceNotFound, "")) {
 		t.Fatalf("want workspace_not_found up front, got %v", err)
@@ -56,7 +56,7 @@ func TestAsyncStillValidatesSynchronously(t *testing.T) {
 func TestAsyncFormatValidationIsSynchronous(t *testing.T) {
 	d := newDeps(&fakeRunner{})
 	_, err := call(t, d, "query_packets", map[string]any{
-		"workspace_id": "x-00000000", "workspace_dir": t.TempDir(),
+		"workspace_id": "x-00000000", "work_dir": t.TempDir(),
 		"format": "parquet", "async": true,
 	})
 	if !errors.Is(err, toolerr.New(toolerr.CodeInvalidArguments, "")) {

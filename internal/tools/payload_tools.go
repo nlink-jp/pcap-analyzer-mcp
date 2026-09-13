@@ -44,12 +44,12 @@ func requirePayload(ws *workspace.Workspace) error {
 // --- follow_stream ----------------------------------------------------------
 
 type followArgs struct {
-	WorkspaceID  string `json:"workspace_id"`
-	WorkspaceDir string `json:"workspace_dir"`
-	Protocol     string `json:"protocol"`
-	Stream       *int64 `json:"stream"`
-	Offset       int    `json:"offset"`
-	Length       int    `json:"length"`
+	WorkspaceID string `json:"workspace_id"`
+	WorkDir     string `json:"work_dir"`
+	Protocol    string `json:"protocol"`
+	Stream      *int64 `json:"stream"`
+	Offset      int    `json:"offset"`
+	Length      int    `json:"length"`
 }
 
 func (d *Deps) followStream() registration {
@@ -64,13 +64,13 @@ func (d *Deps) followStream() registration {
   "type": "object",
   "properties": {
     "workspace_id": {"type": "string"},
-    "workspace_dir": {"type": "string"},
+    ` + workDirProp + `,
     "protocol": {"type": "string", "enum": ["tcp", "udp"], "description": "Default tcp."},
     "stream": {"type": "integer", "description": "Stream index, as reported by list_conversations."},
     "offset": {"type": "integer", "description": "Byte offset into the reassembled stream. Default 0."},
     "length": {"type": "integer", "description": "Bytes to return. Defaults to the configured inline cap; a single stream can be gigabytes."}
   },
-  "required": ["workspace_id", "workspace_dir", "stream"],
+  "required": ["workspace_id", "work_dir", "stream"],
   "additionalProperties": false
 }`),
 		},
@@ -111,7 +111,7 @@ func (d *Deps) handleFollowStream(ctx context.Context, raw json.RawMessage) (any
 		clamped = true
 	}
 
-	ws, err := d.loadWorkspace(a.WorkspaceID, a.WorkspaceDir)
+	ws, err := d.loadWorkspace(ctx, a.WorkspaceID, a.WorkDir)
 	if err != nil {
 		return nil, err
 	}
@@ -257,10 +257,10 @@ func hasNonPrinting(b []byte) bool {
 // --- extract_objects --------------------------------------------------------
 
 type extractArgs struct {
-	WorkspaceID  string `json:"workspace_id"`
-	WorkspaceDir string `json:"workspace_dir"`
-	Protocol     string `json:"protocol"`
-	Async        bool   `json:"async"`
+	WorkspaceID string `json:"workspace_id"`
+	WorkDir     string `json:"work_dir"`
+	Protocol    string `json:"protocol"`
+	Async       bool   `json:"async"`
 }
 
 func (d *Deps) extractObjects() registration {
@@ -269,11 +269,11 @@ func (d *Deps) extractObjects() registration {
   "type": "object",
   "properties": {
     "workspace_id": {"type": "string"},
-    "workspace_dir": {"type": "string"},
+    ` + workDirProp + `,
     "protocol": {"type": "string", "enum": ` + string(protocols) + `, "description": "Which dissector's objects to export."},
     ` + asyncField + `
   },
-  "required": ["workspace_id", "workspace_dir", "protocol"],
+  "required": ["workspace_id", "work_dir", "protocol"],
   "additionalProperties": false
 }`
 	return registration{
@@ -305,7 +305,7 @@ func (d *Deps) handleExtractObjects(ctx context.Context, raw json.RawMessage) (a
 			WithDetails(map[string]any{"supported": runtime.Default().ExportObjectProtocols})
 	}
 
-	ws, err := d.loadWorkspace(a.WorkspaceID, a.WorkspaceDir)
+	ws, err := d.loadWorkspace(ctx, a.WorkspaceID, a.WorkDir)
 	if err != nil {
 		return nil, err
 	}

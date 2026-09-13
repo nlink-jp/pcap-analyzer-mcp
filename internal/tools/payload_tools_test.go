@@ -53,7 +53,7 @@ func TestRequirePayloadAllowsAnIntactCapture(t *testing.T) {
 
 func TestFollowStreamArgumentValidation(t *testing.T) {
 	d := newDeps(&fakeRunner{})
-	base := map[string]any{"workspace_id": "x-00000000", "workspace_dir": t.TempDir()}
+	base := map[string]any{"workspace_id": "x-00000000", "work_dir": t.TempDir()}
 
 	if _, err := call(t, d, "follow_stream", base); !errors.Is(err, toolerr.New(toolerr.CodeMissingArgument, "")) {
 		t.Errorf("stream is required: %v", err)
@@ -79,13 +79,13 @@ func TestFollowStreamArgumentValidation(t *testing.T) {
 
 func TestExtractObjectsProtocolValidation(t *testing.T) {
 	d := newDeps(&fakeRunner{})
-	base := map[string]any{"workspace_id": "x-00000000", "workspace_dir": t.TempDir()}
+	base := map[string]any{"workspace_id": "x-00000000", "work_dir": t.TempDir()}
 
 	if _, err := call(t, d, "extract_objects", base); !errors.Is(err, toolerr.New(toolerr.CodeMissingArgument, "")) {
 		t.Errorf("protocol is required: %v", err)
 	}
 
-	bad := map[string]any{"workspace_id": "x-00000000", "workspace_dir": t.TempDir(), "protocol": "gopher"}
+	bad := map[string]any{"workspace_id": "x-00000000", "work_dir": t.TempDir(), "protocol": "gopher"}
 	_, err := call(t, d, "extract_objects", bad)
 	if !errors.Is(err, toolerr.New(toolerr.CodeInvalidArguments, "")) {
 		t.Fatalf("want invalid_arguments, got %v", err)

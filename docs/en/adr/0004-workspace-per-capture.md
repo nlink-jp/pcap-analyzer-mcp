@@ -1,6 +1,6 @@
 # ADR-0004: 1 pcap : 1 workspace with read-only mounts
 
-- Status: Accepted
+- Status: Accepted (the `allowed_paths` clause is superseded by [ADR-0008](0008-work-dir-contract.md))
 - Date: 2026-07-26
 - Driver: magi
 - Revisions: 2026-07-26 — the parent-directory read-only mount became a **single-file** read-only mount after Track D measurement

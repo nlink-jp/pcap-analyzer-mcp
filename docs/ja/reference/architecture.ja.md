@@ -56,7 +56,7 @@
 
 | 境界 | 内容 |
 |---|---|
-| エージェント → サーバー | ツール引数。`workspace_id` の構文検査、パスの symlink 解決と `allowed_paths` 検査を行う |
+| エージェント → サーバー | ツール引数。`workspace_id` の構文検査、`work_dir` の検査（絶対・存在・書込可・システム/資格情報の位置でない）、`pcap_path` の symlink 解決とブラックリスト照合 |
 | サーバー → コンテナ | `podman run` の引数。マウント指定はサーバーが組み立てる。エージェントが任意のマウントを指定する経路は存在しない |
 | **pcap のバイト列 → tshark** | **最も危険な境界。** 攻撃者制御下のデータを dissector が解釈する。`network=none` / 非 root / `--cap-drop=ALL` / ro マウントで封じ込める |
 | **tshark 出力 → エージェント** | **2 番目に危険な境界。** ペイロードは攻撃者が制御するテキストであり、ノンス XML で隔離する（ADR-0007） |
@@ -65,10 +65,10 @@
 
 ## 3. Data flow（正常系シーケンス）
 
-### 3.1 create_workspace(pcap_path, workspace_dir, async?)
+### 3.1 create_workspace(pcap_path, work_dir, async?)
 
-1. `workspace_dir` の書き込み可否を確認、`pcap_path` を symlink 解決し `allowed_paths` を検査
-2. `workspace_id` を生成（pcap のベース名 + 短いハッシュ）、`<workspace_dir>/<id>/work/{tmp,out,out/objects}` を作成
+1. `work_dir` を解決・検査（引数 → リクエスト `_meta` → エラー）、`pcap_path` を symlink 解決してブラックリスト照合
+2. `workspace_id` を生成（pcap のベース名 + 短いハッシュ）、`<work_dir>/<id>/work/{tmp,out,out/objects}` を作成
 3. ホスト側で pcap の **SHA-256** を計算
 4. `podman run --rm -v <pcap>:/evidence/capture:ro -v <ws>/work:/work <image> sh -c 'tshark --version; echo <区切り>; capinfos -T -m -Q <選択フィールド> /evidence/capture'` を実行（tshark 版数と capinfos を **1 回のコンテナ起動**で取る）
 5. イメージ ID を `podman image inspect` で取得（コンテナ不要）
@@ -123,7 +123,7 @@
 ### 4.2 ディスク（永続）
 
 ```
-<workspace_dir>/<workspace_id>/
+<work_dir>/<workspace_id>/
 ├── meta.json     # pcap パス / sha256 / capinfos / tshark 版数 / image digest
 └── work/
     ├── tmp/            # tshark の TMPDIR
@@ -165,13 +165,13 @@ sentinel code 案: `invalid_arguments` / `missing_argument` / `invalid_workspace
 
 ### 6.1 ホストファイルアクセス
 
-- `pcap_path` は symlink 解決後に `allowed_paths` を検査（既定は空 = 無制限、ADR-0004）
-- `workspace_dir` は書き込み可否のみ検査
+- `pcap_path` は symlink 解決後、資格情報とエージェント制御ファイルの位置を並べたコード内ブラックリストに当たったときだけ拒否する（ADR-0008）。運用者 allowlist は無い。プロセス自体の封じ込めはサンドボックスプロキシの仕事
+- `work_dir` は書き込み可否のみ検査
 - マウント対象はサーバーが決定し、エージェントは指定できない
 
 ### 6.2 workspace_id 検証
 
-`^[a-zA-Z0-9_-]{1,64}$`。パストラバーサル防御は「構文検査」と「結合後パスが `workspace_dir` 配下に収まるかの再検査」の二重で行う。
+`^[a-zA-Z0-9_-]{1,64}$`。パストラバーサル防御は「構文検査」と「結合後パスが `work_dir` 配下に収まるかの再検査」の二重で行う。
 
 ### 6.3 コンテナ実行時制限
 
