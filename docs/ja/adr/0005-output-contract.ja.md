@@ -1,6 +1,6 @@
 # ADR-0005: 出力契約 — バイト閾値・JSONL・形状不変
 
-- Status: Accepted
+- Status: Accepted（ファイル媒介返却は [ADR-0009](0009-withdraw-file-mediated-results.ja.md) が撤回。バイト基準・形の不変性・`matched` は維持）
 - Date: 2026-07-26
 - Driver: magi
 - Revisions: 2026-07-26 — Track E で `delivery` フィールドを追加

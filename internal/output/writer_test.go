@@ -1,302 +1,216 @@
 package output
 
 import (
-	"bufio"
 	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func row(i int) map[string]string {
-	return map[string]string{"frame.number": fmt.Sprint(i), "ip.src": "10.0.0.1"}
-}
+func row(k, v string) map[string]string { return map[string]string{k: v} }
 
-func addAll(t *testing.T, w *Writer, n int) {
+func addAll(t *testing.T, w *Writer, n int, value string) int {
 	t.Helper()
-	for i := 1; i <= n; i++ {
-		ok, err := w.Add(row(i))
+	added := 0
+	for i := 0; i < n; i++ {
+		ok, err := w.Add(row("v", value))
 		if err != nil {
-			t.Fatal(err)
+			t.Fatalf("Add: %v", err)
 		}
 		if !ok {
-			return
+			break
 		}
+		added++
 	}
+	return added
 }
 
-func TestSmallResultStaysInline(t *testing.T) {
-	w := NewWriter(t.TempDir(), "q1", nil, Options{InlineMaxBytes: 65536, RowLimit: 100, SampleRows: 5})
-	addAll(t, w, 3)
+func TestSmallResultComesBackWhole(t *testing.T) {
+	w := NewWriter(Options{MaxBytes: 65536, RowLimit: 100})
+	addAll(t, w, 3, "x")
 
-	res, err := w.Finish("ws", "tcp")
+	res, err := w.Finish("ws", "ip")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.ResultFile != "" {
-		t.Errorf("a small result must not touch disk, got %q", res.ResultFile)
+	if res.Truncated || res.Note != "" {
+		t.Errorf("a result that fit must not report truncation: %+v", res)
 	}
-	if res.Delivery != "inline" {
-		t.Errorf("Delivery = %q", res.Delivery)
-	}
-	if res.Rows == nil || len(*res.Rows) != 3 || res.Returned != 3 {
-		t.Errorf("Rows=%v Returned=%d", res.Rows, res.Returned)
-	}
-	if res.Truncated {
-		t.Error("nothing was dropped")
+	if res.Returned != 3 || len(*res.Rows) != 3 {
+		t.Errorf("returned %d rows", res.Returned)
 	}
 }
 
-// The threshold is bytes, so a handful of fat rows spills where many thin rows
-// would not. That asymmetry is the entire point of counting bytes.
-func TestByteThresholdNotRowCount(t *testing.T) {
-	dir := t.TempDir()
-
-	thin := NewWriter(dir, "thin", nil, Options{InlineMaxBytes: 512, RowLimit: 10000, SampleRows: 2})
-	addAll(t, thin, 5)
-	thinRes, err := thin.Finish("ws", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if thinRes.ResultFile != "" {
-		t.Errorf("5 small rows should stay inline, got %q", thinRes.ResultFile)
-	}
-
-	fat := NewWriter(dir, "fat", nil, Options{InlineMaxBytes: 512, RowLimit: 10000, SampleRows: 2})
-	for i := 0; i < 5; i++ {
-		if _, err := fat.Add(map[string]string{"payload": strings.Repeat("A", 400)}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	fatRes, err := fat.Finish("ws", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fatRes.ResultFile == "" {
-		t.Error("5 payload-carrying rows exceed the byte budget and must spill")
-	}
-	if fatRes.Returned != 5 {
-		t.Errorf("Returned = %d, want 5", fatRes.Returned)
-	}
-}
-
-// Rows buffered inline before the threshold was crossed must end up in the
-// file too — losing them would silently drop the head of the result.
-func TestSpillPreservesBufferedRows(t *testing.T) {
-	w := NewWriter(t.TempDir(), "q", nil, Options{InlineMaxBytes: 120, RowLimit: 1000, SampleRows: 3})
-	addAll(t, w, 20)
+// The budget is bytes, not rows: in pcap work a hundred rows carrying a
+// payload column outweigh ten thousand rows of addresses. That half of
+// ADR-0005 survives the withdrawal of file mediation.
+func TestByteBudgetStopsBeforeTheRowLimit(t *testing.T) {
+	big := strings.Repeat("A", 400)
+	w := NewWriter(Options{MaxBytes: 1000, RowLimit: 1000})
+	added := addAll(t, w, 50, big)
 
 	res, err := w.Finish("ws", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.ResultFile == "" {
-		t.Fatal("expected a spill")
-	}
-
-	f, err := os.Open(res.ResultFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-
-	var lines []string
-	sc := bufio.NewScanner(f)
-	for sc.Scan() {
-		lines = append(lines, sc.Text())
-	}
-	if len(lines) != 20 {
-		t.Fatalf("file holds %d rows, want all 20", len(lines))
-	}
-	var first map[string]string
-	if err := json.Unmarshal([]byte(lines[0]), &first); err != nil {
-		t.Fatal(err)
-	}
-	if first["frame.number"] != "1" {
-		t.Errorf("first row in the file is %v; the buffered head was lost", first)
-	}
-}
-
-// A file-backed result still carries the leading rows, so the agent never
-// needs an extra call just to see the shape of the data.
-func TestFileResultCarriesSample(t *testing.T) {
-	w := NewWriter(t.TempDir(), "q", nil, Options{InlineMaxBytes: 50, RowLimit: 1000, SampleRows: 3})
-	addAll(t, w, 20)
-
-	res, err := w.Finish("ws", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Sample == nil || len(*res.Sample) != 3 {
-		t.Fatalf("Sample = %v, want 3 rows", res.Sample)
-	}
-	if res.Rows != nil {
-		t.Error("a file-backed result must not also inline every row")
-	}
-	if res.Delivery != "file" {
-		t.Errorf("Delivery = %q", res.Delivery)
-	}
-	if res.ResultBytes == 0 {
-		t.Error("ResultBytes should report the file size")
-	}
-	if res.Format != "jsonl" {
-		t.Errorf("Format = %q", res.Format)
-	}
-}
-
-func TestRowLimitTruncates(t *testing.T) {
-	w := NewWriter(t.TempDir(), "q", nil, Options{InlineMaxBytes: 1 << 20, RowLimit: 5, SampleRows: 2})
-	addAll(t, w, 50)
-
-	res, err := w.Finish("ws", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if res.Returned != 5 {
-		t.Errorf("Returned = %d, want 5", res.Returned)
+	if added >= 50 {
+		t.Fatalf("the byte budget did not stop the read: added %d", added)
 	}
 	if !res.Truncated {
-		t.Error("hitting the row limit must set Truncated")
+		t.Error("a result stopped by the budget must say so")
 	}
-}
-
-// Add returning false is how the caller learns to stop draining tshark rather
-// than reading a stream whose rows will be discarded.
-func TestAddStopsAtLimit(t *testing.T) {
-	w := NewWriter(t.TempDir(), "q", nil, Options{InlineMaxBytes: 1 << 20, RowLimit: 2})
-	for i := 1; i <= 2; i++ {
-		ok, err := w.Add(row(i))
-		if err != nil || !ok {
-			t.Fatalf("row %d: ok=%v err=%v", i, ok, err)
-		}
+	if !strings.Contains(res.Note, "byte budget") {
+		t.Errorf("the note must name the cap that stopped it: %q", res.Note)
 	}
-	ok, err := w.Add(row(3))
+	if res.Rows == nil || len(*res.Rows) != res.Returned {
+		t.Error("the rows that did fit must still come back")
+	}
+	// And the response actually respects the budget it was given.
+	body, err := json.Marshal(res.Rows)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ok {
-		t.Error("Add must report false once the limit is reached")
+	if len(body) > 1000+len(big) {
+		t.Errorf("rows serialize to %d bytes, well past the 1000-byte budget", len(body))
 	}
 }
 
-// A row limit of zero means "give me everything", which cannot be an inline
-// response.
-func TestUnboundedAlwaysGoesToFile(t *testing.T) {
-	w := NewWriter(t.TempDir(), "export", nil, Options{InlineMaxBytes: 1 << 20, RowLimit: 0, SampleRows: 2})
-	addAll(t, w, 3)
+func TestRowLimitStopsTheRead(t *testing.T) {
+	w := NewWriter(Options{MaxBytes: 1 << 20, RowLimit: 5})
+	// Add returns "stop" on the call that stores the last row, so the loop
+	// exits one iteration early; Returned is the count that matters.
+	addAll(t, w, 20, "x")
 
 	res, err := w.Finish("ws", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.ResultFile == "" {
-		t.Error("an unbounded export must be file-backed regardless of size")
+	if res.Returned != 5 || len(*res.Rows) != 5 {
+		t.Errorf("returned=%d rows=%d, want 5", res.Returned, len(*res.Rows))
 	}
-	if res.Truncated {
-		t.Error("an unbounded export drops nothing")
+	if !res.Truncated || !strings.Contains(res.Note, "row limit") {
+		t.Errorf("a result stopped by the row limit must name it: %+v", res)
+	}
+}
+
+// Nothing is written to disk any more: the response is the delivery.
+func TestResultCarriesNoFileChannel(t *testing.T) {
+	w := NewWriter(Options{MaxBytes: 100, RowLimit: 0})
+	addAll(t, w, 100, strings.Repeat("B", 200))
+	res, err := w.Finish("ws", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := json.Marshal(res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, gone := range []string{"result_file", "delivery", "sample", "result_bytes"} {
+		if strings.Contains(string(body), gone) {
+			t.Errorf("the result still carries %q: %s", gone, body)
+		}
 	}
 }
 
 func TestEmptyResultIsAnEmptyArray(t *testing.T) {
-	w := NewWriter(t.TempDir(), "q", nil, Options{InlineMaxBytes: 4096, RowLimit: 10})
+	w := NewWriter(Options{MaxBytes: 65536, RowLimit: 10})
 	res, err := w.Finish("ws", "tcp.port == 9999")
 	if err != nil {
 		t.Fatal(err)
 	}
+	body, err := json.Marshal(res)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"rows":[]`) {
+		t.Errorf("zero matches must serialize as an empty array: %s", body)
+	}
+}
+
+// The shape is the same whether or not the caps bit: an agent reads the same
+// keys every time and branches on `truncated`, not on which keys exist.
+func TestShapeIsInvariant(t *testing.T) {
+	keysOf := func(w *Writer) []string {
+		res, err := w.Finish("ws", "ip")
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]json.RawMessage
+		b, err := json.Marshal(res)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		out := make([]string, 0, len(m))
+		for k := range m {
+			if k == "note" || k == "omitted_rows" {
+				continue // present only when something was dropped
+			}
+			out = append(out, k)
+		}
+		return out
+	}
+
+	small := NewWriter(Options{MaxBytes: 65536, RowLimit: 100})
+	addAll(t, small, 2, "x")
+	large := NewWriter(Options{MaxBytes: 200, RowLimit: 100})
+	addAll(t, large, 50, strings.Repeat("C", 100))
+
+	a, b := keysOf(small), keysOf(large)
+	if len(a) != len(b) {
+		t.Fatalf("key sets differ: %v vs %v", a, b)
+	}
+	seen := map[string]bool{}
+	for _, k := range a {
+		seen[k] = true
+	}
+	for _, k := range b {
+		if !seen[k] {
+			t.Errorf("key %q appears only in the capped result", k)
+		}
+	}
+}
+
+// matched is the exact total, and the gap between it and what came back is
+// counted rather than left for the agent to work out.
+func TestSetMatchedCountsWhatWasLeftOut(t *testing.T) {
+	w := NewWriter(Options{MaxBytes: 1 << 20, RowLimit: 5})
+	addAll(t, w, 20, "x")
+	res, err := w.Finish("ws", "ip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	SetMatched(&res, 4200)
+
+	if res.Matched == nil || *res.Matched != 4200 {
+		t.Fatalf("matched = %v, want the exact 4200", res.Matched)
+	}
+	if res.OmittedRows != 4195 {
+		t.Errorf("omitted_rows = %d, want 4195", res.OmittedRows)
+	}
+	if !res.Truncated {
+		t.Error("a result missing matched packets is truncated")
+	}
+}
+
+func TestMatchedOmittedWhenUnknown(t *testing.T) {
+	w := NewWriter(Options{MaxBytes: 65536, RowLimit: 10})
+	addAll(t, w, 2, "x")
+	res, err := w.Finish("ws", "ip")
+	if err != nil {
+		t.Fatal(err)
+	}
+	SetMatchedUnavailable(&res, "tshark did not report a count")
+
 	b, err := json.Marshal(res)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), `"rows":[]`) {
-		t.Errorf("no matches must serialize as an empty array, got %s", b)
-	}
-}
-
-// Inline and file-backed results must present the same keys for the fields
-// they share, so the agent has nothing to branch on.
-func TestShapeIsInvariant(t *testing.T) {
-	dir := t.TempDir()
-
-	small := NewWriter(dir, "small", nil, Options{InlineMaxBytes: 65536, RowLimit: 100, SampleRows: 2})
-	addAll(t, small, 2)
-	inline, err := small.Finish("ws", "tcp")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	big := NewWriter(dir, "big", nil, Options{InlineMaxBytes: 50, RowLimit: 100, SampleRows: 2})
-	addAll(t, big, 40)
-	spilled, err := big.Finish("ws", "tcp")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, res := range []Result{inline, spilled} {
-		var m map[string]any
-		b, _ := json.Marshal(res)
-		if err := json.Unmarshal(b, &m); err != nil {
-			t.Fatal(err)
-		}
-		for _, key := range []string{"workspace_id", "filter", "returned", "truncated", "delivery"} {
-			if _, ok := m[key]; !ok {
-				t.Errorf("%q missing from a result: %s", key, b)
-			}
-		}
-	}
-}
-
-func TestCSVFormat(t *testing.T) {
-	headers := []string{"frame.number", "ip.src"}
-	w := NewWriter(t.TempDir(), "q", headers, Options{InlineMaxBytes: 10, RowLimit: 100, Format: "csv", SampleRows: 1})
-	addAll(t, w, 3)
-
-	res, err := w.Finish("ws", "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if filepath.Ext(res.ResultFile) != ".csv" {
-		t.Errorf("ResultFile = %q, want a .csv", res.ResultFile)
-	}
-	b, err := os.ReadFile(res.ResultFile)
-	if err != nil {
-		t.Fatal(err)
-	}
-	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
-	if lines[0] != "frame.number,ip.src" {
-		t.Errorf("header = %q", lines[0])
-	}
-	if len(lines) != 4 {
-		t.Errorf("got %d lines, want header + 3 rows: %q", len(lines), lines)
-	}
-}
-
-func TestSetMatched(t *testing.T) {
-	var res Result
-	SetMatched(&res, 48213)
-	if res.Matched == nil || *res.Matched != 48213 {
-		t.Fatalf("Matched = %v", res.Matched)
-	}
-
-	var other Result
-	SetMatchedUnavailable(&other, "count_timed_out")
-	if other.Matched != nil {
-		t.Error("Matched should stay absent")
-	}
-	if other.MatchedUnavailableReason != "count_timed_out" {
-		t.Errorf("reason = %q", other.MatchedUnavailableReason)
-	}
-}
-
-// Matched must be omitted rather than serialized as 0, which an agent would
-// read as "no matches".
-func TestMatchedOmittedWhenUnknown(t *testing.T) {
-	b, err := json.Marshal(Result{WorkspaceID: "ws", Returned: 3})
-	if err != nil {
-		t.Fatal(err)
-	}
 	if strings.Contains(string(b), `"matched"`) {
-		t.Errorf("an unknown match count must be omitted, not zero: %s", b)
+		t.Errorf("an unknown count must be absent, not zero: %s", b)
+	}
+	if !strings.Contains(string(b), "matched_unavailable_reason") {
+		t.Errorf("a missing count must say why: %s", b)
 	}
 }

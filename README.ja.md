@@ -7,7 +7,7 @@ AI エージェントにパケットキャプチャを解析させるための M
 エージェントは pcap を扱えません。tshark を薄く包んでも解決せず、`tshark -V`
 は 1 パケットで数百行を吐きます。`pcap-analyzer-mcp` は **バージョンを固定した
 tshark をコンテナ内で動かし**、キャプチャを **read-only でマウント**して、
-小さい結果はインライン、大きい結果はワークスペースへ JSONL で返します。
+結果は明示した上限の範囲でレスポンスに載せ、上限で落とした分は必ず計上します。
 最初の応答で溺れることなく、GB 級のキャプチャを段階的に絞り込めます。
 
 > **ステータス: v0.1.0。** 12 ツールを実コンテナで端から端まで動作確認し、実 MCP
@@ -67,7 +67,7 @@ MCP クライアントにサーバーとして登録します。
 create_workspace(pcap_path, work_dir)  →  workspace_id, sha256, 要約
 describe_workspace(workspace_id)            →  パケット数・時間範囲・snaplen
 list_conversations(workspace_id)            →  誰と誰が話したか（+ストリーム番号）
-query_packets(workspace_id, filter, fields) →  行をインライン、または JSONL ファイル
+query_packets(workspace_id, filter, fields) →  行（上限つき・落とした分は計上）
 follow_stream(workspace_id, ...)            →  実際に流れたバイト列
 extract_objects(workspace_id, "http")       →  ファイル抽出（defang + ハッシュ）
 ```
@@ -105,10 +105,16 @@ MCP クライアントのリクエストタイムアウトに引っかかるた�
 
 ### 出力の扱い
 
-大きい結果は **JSONL** で書き出されます。`head` / `grep` で部分的に読め、
-DuckDB がそのまま読み込めます。パケットテーブルに SQL をかけたい場合は
-[data-toolbox-mcp](https://github.com/nlink-jp/data-toolbox-mcp) へ渡せます。
-絞り込みが本ツール、集計と結合があちらの担当です。
+行はレスポンスで返します。上限は `limit`（行数）と `max_bytes`（バイト予算）の
+2 つで、上限で落とした分は `truncated`・`omitted_rows`・どちらの上限で止まったかを
+述べる `note` として返ります。`matched` は常に正確なので、打ち切られた結果も
+「キャプチャ全体についての答え」であり続けます。
+
+**このサーバーは結果をファイルに書きません。** 呼び出し側のコンテキスト窓を
+サーバーは知り得ないためで、大きなレスポンスをディスクへ退避するのはエージェント
+ランタイムの仕事です。絞り込みが本ツールの担当で、パケットテーブルに SQL を
+かけたいなら、絞ってから
+[data-toolbox-mcp](https://github.com/nlink-jp/data-toolbox-mcp) へ渡してください。
 
 すべての応答は `returned` と併せて `matched`（フィルタに合致した総数）を返す
 ので、絞り込みを強めるべきかどうかが常に分かります。

@@ -141,8 +141,11 @@ func TestStage4_QueryAndNarrow(t *testing.T) {
 	if all["matched"].(float64) != 4 {
 		t.Errorf("matched = %v, want 4", all["matched"])
 	}
-	if all["delivery"] != "inline" {
-		t.Errorf("a 4-row result should come back inline, got %v", all["delivery"])
+	if all["truncated"] == true {
+		t.Errorf("a 4-row result should come back whole, got %v", all)
+	}
+	if _, wrote := all["result_file"]; wrote {
+		t.Error("results are no longer written to a file (ADR-0009)")
 	}
 
 	// matched must reflect the filter, not the returned rows: that is what

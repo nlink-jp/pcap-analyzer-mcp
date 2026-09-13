@@ -204,7 +204,6 @@ type queryArgs struct {
 	Filter      string   `json:"filter"`
 	Fields      []string `json:"fields"`
 	Limit       *int     `json:"limit"`
-	Format      string   `json:"format"`
 	Async       bool     `json:"async"`
 }
 
@@ -220,10 +219,10 @@ func (d *Deps) queryPackets() registration {
 		desc: mcpserver.Tool{
 			Name: "query_packets",
 			Description: "The workhorse: select packets with a Wireshark display filter and extract " +
-				"named fields. Small results come back inline; large ones are written to " +
-				"the workspace as JSONL and only a sample is returned. `matched` always " +
-				"reports how many packets the filter hit, so you can tell \"too broad\" " +
-				"from \"nothing there\". Set limit to 0 to export everything to a file.",
+				"named fields. Rows come back in the response, bounded by limit and by a byte " +
+				"budget; what the bounds leave out is counted in omitted_rows, never cut " +
+				"silently. `matched` always reports how many packets the filter hit, so you can " +
+				"tell \"too broad\" from \"nothing there\".",
 			InputSchema: json.RawMessage(`{
   "type": "object",
   "properties": {
@@ -231,8 +230,7 @@ func (d *Deps) queryPackets() registration {
     ` + workDirProp + `,
     "filter": {"type": "string", "description": "Wireshark display filter, e.g. \"tcp.flags.reset == 1 && ip.addr == 10.0.0.1\". Empty means every packet."},
     "fields": {"type": "array", "items": {"type": "string"}, "description": "Field names to extract, e.g. [\"frame.number\",\"ip.src\",\"http.host\"]. Defaults to a general-purpose set."},
-    "limit": {"type": "integer", "description": "Maximum rows to return. Omit for the configured default; 0 means unlimited and always writes a file."},
-    "format": {"type": "string", "enum": ["jsonl", "csv"], "description": "Encoding of the output file. Default jsonl."},
+    "limit": {"type": "integer", "description": "Maximum rows to return. Omit for the configured default; 0 means bounded by the byte budget alone. Rows past the bound are left out and counted in omitted_rows, with matched staying exact."},
     "async": {"type": "boolean", "description": "Run in the background and return a job_id immediately. Use for large captures: a full pass takes minutes and would otherwise hit your request timeout. Poll with check_job."}
   },
   "required": ["workspace_id", "work_dir"],
@@ -247,10 +245,6 @@ func (d *Deps) handleQueryPackets(ctx context.Context, raw json.RawMessage) (any
 	var a queryArgs
 	if err := decode(raw, &a); err != nil {
 		return nil, err
-	}
-	if a.Format != "" && a.Format != "jsonl" && a.Format != "csv" {
-		return nil, toolerr.Newf(toolerr.CodeInvalidArguments,
-			"format must be jsonl or csv, got %q", a.Format)
 	}
 	fields := a.Fields
 	if len(fields) == 0 {
@@ -286,11 +280,9 @@ func (d *Deps) runQuery(
 	fields []string,
 	limit int,
 ) (any, error) {
-	w := output.NewWriter(ws.OutDir(), nextResultName(ws.OutDir(), "query"), fields, output.Options{
-		InlineMaxBytes: d.Cfg.Output.InlineMaxBytes,
-		RowLimit:       limit,
-		SampleRows:     d.Cfg.Output.SampleRows,
-		Format:         a.Format,
+	w := output.NewWriter(output.Options{
+		MaxBytes: d.Cfg.Output.MaxBytes,
+		RowLimit: limit,
 	})
 
 	var addErr error
@@ -365,22 +357,6 @@ func (d *Deps) countMatches(ctx context.Context, ws *workspace.Workspace, filter
 			run.ExitCode, strings.TrimSpace(string(run.Stderr)))
 	}
 	return n, nil
-}
-
-// nextResultName picks an unused basename so results accumulate rather than
-// overwrite each other.
-func nextResultName(outDir, prefix string) string {
-	for i := 1; ; i++ {
-		name := fmt.Sprintf("%s-%03d", prefix, i)
-		if _, err := os.Stat(filepath.Join(outDir, name+".jsonl")); os.IsNotExist(err) {
-			if _, err := os.Stat(filepath.Join(outDir, name+".csv")); os.IsNotExist(err) {
-				return name
-			}
-		}
-		if i > 9999 {
-			return fmt.Sprintf("%s-overflow", prefix)
-		}
-	}
 }
 
 // listOutputs enumerates the result files a workspace has accumulated.

@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Breaking: results are no longer written to a file by this server.**
+  `query_packets` loses its `format` argument (jsonl/csv), and results lose
+  `result_file`, `sample` and `delivery`. Rows come back in the response under
+  two explicit bounds — `limit` and the byte budget — and what the bounds leave
+  out is counted: `truncated`, `omitted_rows`, and a `note` naming the bound
+  that stopped it. `matched` stays exact, so a bounded answer is still an answer
+  about the whole capture. See
+  [ADR-0009](docs/en/adr/0009-withdraw-file-mediated-results.md).
+- **Breaking: `output.inline_max_bytes` is renamed to `output.max_bytes`** with
+  a changed meaning (the budget for rows in a response, not the threshold for
+  spilling to a file), and `output.sample_rows` is removed. A config still
+  carrying either fails at startup with the reason named.
+- `limit: 0` now means "bounded by the byte budget alone" rather than "export
+  everything to a file".
+- `work_dir` is unaffected: `extract_objects` produces files as its product, and
+  the workspace still lives under the caller's directory.
+
+### Changed
+
 - **Breaking: `workspace_dir` is now `work_dir`, on every tool.** It means what
   the caller means by it — the absolute path of a directory the caller can read
   back — and the workspace is `<work_dir>/<workspace_id>/` as before. A call

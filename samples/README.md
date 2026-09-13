@@ -67,7 +67,7 @@ The stream index is the point of `list_conversations`: it is what
 ### 4. Narrow down
 
 ```
-query_packets(filter="tcp")            → matched 4, returned 4, delivery inline
+query_packets(filter="tcp")            → matched 4, returned 4, truncated false
 query_packets(filter="tcp", limit=1)   → matched 4, returned 1, truncated true
 query_packets(filter="tcp.port == 9999") → matched 0, rows []
 ```

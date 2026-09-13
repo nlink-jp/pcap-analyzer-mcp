@@ -33,14 +33,13 @@ timeout = "30m"
 # than having it silently ignored.
 
 [output]
-# Results larger than this many serialized bytes are written to the workspace
-# as JSONL instead of being returned inline. Bytes rather than rows, because a
-# payload column makes row counts meaningless (ADR-0005).
-inline_max_bytes = 65536
+# Byte budget for the rows one response may carry. Bytes rather than rows,
+# because a payload column makes row counts meaningless (ADR-0005). Rows past
+# the budget are left out of the response and counted — they are no longer
+# written to a file this server chose (ADR-0009), because a server cannot know
+# the caller's context window.
+max_bytes = 65536
 default_row_limit = 10000
-# Leading rows attached to a file-backed result so the agent never needs a
-# round trip just to learn the shape of the data.
-sample_rows = 5
 # Distinct streams list_conversations will hold in memory. This map lives in the
 # server process, outside the container's memory cgroup, and top_n is applied
 # after aggregation — so neither bounds it.

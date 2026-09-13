@@ -63,7 +63,8 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 - **ADR-0003**: Lean image — `debian:12-slim` (digest-pinned) + `tshark` only, 274MB. No DuckDB, no Python, therefore **no parquet**; exports are JSONL / CSV. The dumpcap binary is deleted, so the image cannot capture.
 - **ADR-0004**: **1 pcap : 1 workspace.** The capture file itself is mounted `ro` at the fixed path `/evidence/capture` and never copied. The work directory is an argument, not config. (Its `allowed_paths` clause is superseded by ADR-0008.)
 - **ADR-0008**: The argument is **`work_dir`** — the absolute path of a directory the caller can read back — resolved from the argument, then the request's `_meta`, then an error. No server-owned default. `allowed_paths` is **deleted**; `pcap_path` may be anywhere except a fixed in-code blacklist of credential locations, which is a floor, not a boundary.
-- **ADR-0005**: Output contract — threshold in **bytes not rows**, response shape identical inline vs. file, `matched` always returned, `sample` attached for file results, large output is **JSONL not a JSON array**.
+- **ADR-0005**: Output contract — bound in **bytes not rows**, response shape invariant, `matched` always returned. (Its file-mediated half is withdrawn by ADR-0009.)
+- **ADR-0009**: **No file-mediated results.** Rows come back in the response under `limit` + `max_bytes`; what the bounds leave out is counted (`truncated`, `omitted_rows`, `note`) and `matched` stays exact. A server cannot know the caller's context window — spilling a large response to disk is the runtime's job. `work_dir` stays for extracted objects, whose product *is* a file.
 - **ADR-0006**: Async for heavy tools only (`create_workspace`, `protocol_hierarchy`, `list_conversations`, `query_packets`, `extract_objects`). Validation stays synchronous. Jobs are in-memory; `job_not_found` means "just re-run it".
 - **ADR-0007**: Payload safety, all four in the same commit as the payload code — nonce XML isolation with the framing **first**, defang to `<sha256>.bin` mode 0600, payload never logged, ranged reads via `offset`/`length`.
 
@@ -89,7 +90,7 @@ no container. Expect it to be the most-called tool.
 - Time values are returned as **epoch plus UTC ISO-8601**, never local-formatted.
 - **`CountArgs` must emit a header row.** The same reader parses queries and the count pass; without `-E header=y` the first packet is eaten as column names and every `matched` is one short. There is a regression test.
 - **A row limit kills the container on purpose.** `StreamResult.Stopped` says so — treat a non-zero exit as tshark's fault only when `Stopped` is false, or every limited query reports a container failure.
-- **`rows` is a pointer.** An empty inline result must serialize as `[]`; under `omitempty` a plain slice vanishes and becomes indistinguishable from a file-backed result. `delivery` states the channel outright.
+- **`rows` is a pointer.** An empty result must serialize as `[]`; under `omitempty` a plain slice vanishes and becomes indistinguishable from a result that carried no rows for another reason.
 - **Background jobs must not inherit the request context.** It is cancelled the moment the job id is returned; `Deps.ServerCtx` is what they run under.
 - **Payload must stay inside `payload.Untrusted`.** It redacts in `String`/`LogValue`, so nothing leaks through a log line or an error. `Reveal()` is the only way out — grep for it to audit every such site.
 - **Never store an object under a name from the wire.** tshark writes `object1.text%2fplain` at 0644; `payload.Defang` renames to `<sha256>.bin` at 0600.

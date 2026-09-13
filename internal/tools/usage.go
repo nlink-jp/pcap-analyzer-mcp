@@ -49,12 +49,12 @@ func (d *Deps) getUsage() registration {
 			InputSchema: json.RawMessage(`{"type":"object","properties":{},"additionalProperties":false}`),
 		},
 		handler: func(_ context.Context, _ json.RawMessage) (any, error) {
-			return usageDoc(d.Cfg.Output.InlineMaxBytes, d.Cfg.Output.DefaultRowLimit), nil
+			return usageDoc(d.Cfg.Output.MaxBytes, d.Cfg.Output.DefaultRowLimit), nil
 		},
 	}
 }
 
-func usageDoc(inlineMaxBytes, defaultRowLimit int) map[string]any {
+func usageDoc(maxBytes, defaultRowLimit int) map[string]any {
 	return map[string]any{
 		"model": []string{
 			"A workspace binds one capture to one directory. create_workspace opens a " +
@@ -92,19 +92,19 @@ func usageDoc(inlineMaxBytes, defaultRowLimit int) map[string]any {
 			"A finished job returns exactly what the synchronous call would have returned.",
 		},
 		"result_contract": map[string]any{
-			"shape": "Every result-returning tool answers with the same keys. `delivery` is " +
-				"\"inline\" or \"file\"; nothing else changes between the two.",
+			"shape": "Every result-returning tool answers with the same keys, whether or not " +
+				"the bounds bit. Branch on `truncated`, never on which keys happen to be present.",
 			"matched": "The number of packets the filter selected, always reported. Compare it " +
 				"with `returned`: if matched is far larger, narrow the filter rather than " +
 				"raising the limit. matched == 0 means the filter genuinely found nothing.",
-			"file_results": "Large results are written to the workspace — JSONL by default, " +
-				"CSV if you ask for it via format — and `sample` " +
-				"carries the leading rows, so you never need a second call just to see the " +
-				"shape. Read the file in pieces, or hand it to a SQL tool — it is not meant " +
-				"to be read whole.",
-			"inline_max_bytes":  inlineMaxBytes,
+			"bounds": "Rows come back in the response, bounded by `limit` (rows) and by a byte " +
+				"budget. What the bounds leave out is reported as `truncated` + `omitted_rows`, " +
+				"with a `note` naming the bound that stopped it. Nothing is written to a file " +
+				"this server chose: it cannot know your context window, and a runtime that " +
+				"needs a large response on disk already puts it there.",
+			"max_bytes":         maxBytes,
 			"default_row_limit": defaultRowLimit,
-			"unlimited_export":  "limit: 0 returns everything as a file, whatever the size.",
+			"getting_more":      "Narrow the filter, ask for fewer fields, or raise limit if your context can hold it. matched stays exact either way.",
 			"timestamps":        "Epoch seconds plus a UTC ISO-8601 rendering. Never local time.",
 		},
 		"extracted_objects": map[string]any{

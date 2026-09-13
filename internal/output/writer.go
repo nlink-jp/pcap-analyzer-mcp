@@ -1,17 +1,22 @@
-// Package output implements the result contract every tool obeys (ADR-0005).
+// Package output implements the result contract every tool obeys (ADR-0005,
+// amended by ADR-0009).
 //
-// The shape returned to the agent is identical whether the rows came back
-// inline or went to a file, so the agent never branches on delivery. The
-// decision between the two is made on serialized bytes, not on row count: in
-// pcap work a hundred rows carrying a payload column routinely outweigh ten
-// thousand rows of addresses.
+// Results come back in the response, bounded by two explicit caps: a row limit
+// the caller sets, and a serialized-byte budget. What the caps drop is counted,
+// never cut silently, and `matched` stays exact either way, so a bounded answer
+// is still an answer about the whole capture.
+//
+// The budget is drawn on bytes rather than rows because in pcap work a hundred
+// rows carrying a payload column routinely outweigh ten thousand rows of
+// addresses — that part of ADR-0005 survives. What is gone is writing the
+// overflow to a file the server chose: a server cannot know the caller's
+// context window, and a runtime that needs a large response on disk already
+// puts it there (organization policy, 2026-09-06).
 package output
 
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 )
 
 // UntrustedFieldsNote frames field values read out of a capture.
@@ -53,24 +58,19 @@ type Result struct {
 	Returned  int  `json:"returned"`
 	Truncated bool `json:"truncated"`
 
-	// Delivery is "inline" or "file". The agent reads one field instead of
-	// inferring the channel from which keys happen to be present.
-	Delivery string `json:"delivery"`
+	// OmittedRows is how many matched packets are missing from Rows. It is
+	// filled in once the match count is known, because that is when the number
+	// exists: the caps stop the read, so the writer itself never sees the rest.
+	OmittedRows int64 `json:"omitted_rows,omitempty"`
 
-	// Rows is present only for an inline result — as a pointer so that zero
-	// matches serialize as [] rather than vanishing under omitempty, which
-	// would be indistinguishable from a file-backed result.
+	// Note says which cap stopped the result and what to do about it. Present
+	// only when something was dropped — its presence is the signal.
+	Note string `json:"note,omitempty"`
+
+	// Rows is a pointer so that zero matches serialize as [] rather than
+	// vanishing under omitempty, which would be indistinguishable from a
+	// result that carried no rows for another reason.
 	Rows *[]json.RawMessage `json:"rows,omitempty"`
-
-	// ResultFile and ResultBytes are present only for a file-backed result.
-	ResultFile  string `json:"result_file,omitempty"`
-	ResultBytes int64  `json:"result_bytes,omitempty"`
-	// Sample carries the leading rows even when the body went to a file, so
-	// learning the shape of the data never costs a second round trip.
-	Sample *[]json.RawMessage `json:"sample,omitempty"`
-
-	// Format names the on-disk encoding of ResultFile.
-	Format string `json:"format,omitempty"`
 }
 
 // RowsReturned lets the job manager finish a job with a progress count that
@@ -79,65 +79,46 @@ func (r Result) RowsReturned() int { return r.Returned }
 
 // Options configures a Writer.
 type Options struct {
-	// InlineMaxBytes is the serialized-byte budget for an inline result.
-	InlineMaxBytes int
+	// MaxBytes is the serialized-byte budget for the rows in one response.
+	// Zero takes the built-in default; the caps are never both off, because a
+	// response with no bound is a response that can break the client that
+	// asked for it.
+	MaxBytes int
 	// RowLimit stops collection after this many rows and sets Truncated.
-	// Zero means unbounded, which forces a file-backed result.
+	// Zero means "bounded by MaxBytes alone".
 	RowLimit int
-	// SampleRows is how many leading rows accompany a file-backed result.
-	SampleRows int
-	// Format is "jsonl" (default) or "csv".
-	Format string
 }
 
-// Writer accumulates rows and decides, as it goes, whether the result stays
-// inline or spills to a file.
-//
-// Bytes are counted while accumulating rather than by serializing twice: the
-// moment the budget is exceeded, what has been buffered is flushed to disk and
-// everything after it streams straight through.
-type Writer struct {
-	opts    Options
-	outDir  string
-	name    string
-	headers []string
+// DefaultMaxBytes is the byte budget used when Options leaves it unset.
+const DefaultMaxBytes = 65536
 
-	buffered  []json.RawMessage
+// Writer accumulates rows up to the caps and reports what it had to leave out.
+type Writer struct {
+	opts Options
+
+	rows      []json.RawMessage
 	bytes     int
 	count     int
-	sample    []json.RawMessage
 	truncated bool
-
-	file    *os.File
-	csvOut  *csvEncoder
-	written int64
-	path    string
+	stopped   string // which cap stopped the read: "row_limit" or "max_bytes"
 }
 
-// NewWriter returns a Writer that will spill into outDir when needed.
-//
-// headers fixes the column order for CSV output; JSONL ignores it.
-func NewWriter(outDir, name string, headers []string, opts Options) *Writer {
-	if opts.InlineMaxBytes <= 0 {
-		opts.InlineMaxBytes = 65536
+// NewWriter returns a Writer bounded by opts.
+func NewWriter(opts Options) *Writer {
+	if opts.MaxBytes <= 0 {
+		opts.MaxBytes = DefaultMaxBytes
 	}
-	if opts.SampleRows < 0 {
-		opts.SampleRows = 0
-	}
-	if opts.Format == "" {
-		opts.Format = "jsonl"
-	}
-	return &Writer{opts: opts, outDir: outDir, name: name, headers: headers}
+	return &Writer{opts: opts}
 }
 
-// Full reports whether the row limit has been reached, so the caller can stop
-// reading tshark instead of draining a stream it will discard.
+// Full reports whether a cap has been reached, so the caller can stop reading
+// tshark instead of draining a stream it will discard.
 func (w *Writer) Full() bool {
-	return w.opts.RowLimit > 0 && w.count >= w.opts.RowLimit
+	return w.stopped != "" || (w.opts.RowLimit > 0 && w.count >= w.opts.RowLimit)
 }
 
-// Add appends one row. It returns false once the row limit is reached, which
-// is the signal to stop reading.
+// Add appends one row. It returns false once a cap is reached, which is the
+// signal to stop reading.
 func (w *Writer) Add(row any) (bool, error) {
 	if w.Full() {
 		w.truncated = true
@@ -148,129 +129,63 @@ func (w *Writer) Add(row any) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("marshal row: %w", err)
 	}
+
+	// The budget is checked before the row is kept, so the response never
+	// exceeds it by the size of one last row.
+	if w.count > 0 && w.bytes+len(b)+1 > w.opts.MaxBytes {
+		w.truncated = true
+		w.stopped = "max_bytes"
+		return false, nil
+	}
+
+	w.rows = append(w.rows, json.RawMessage(b))
+	w.bytes += len(b) + 1
 	w.count++
 
-	if len(w.sample) < w.opts.SampleRows {
-		w.sample = append(w.sample, json.RawMessage(b))
-	}
-
-	// A row limit of zero means "everything", which cannot be an inline
-	// response; go to a file from the first row.
-	unbounded := w.opts.RowLimit == 0
-
-	if w.file == nil && !unbounded {
-		w.bytes += len(b) + 1
-		if w.bytes <= w.opts.InlineMaxBytes {
-			w.buffered = append(w.buffered, json.RawMessage(b))
-			return true, nil
-		}
-	}
-	if w.file == nil {
-		if err := w.spill(); err != nil {
-			return false, err
-		}
-	}
-	if err := w.writeRow(b, row); err != nil {
-		return false, err
-	}
-	if w.Full() {
+	if w.opts.RowLimit > 0 && w.count >= w.opts.RowLimit {
 		w.truncated = true
+		w.stopped = "row_limit"
 		return false, nil
 	}
 	return true, nil
 }
 
-// spill creates the output file and flushes what was buffered inline.
-func (w *Writer) spill() error {
-	if err := os.MkdirAll(w.outDir, 0o700); err != nil {
-		return fmt.Errorf("create output dir: %w", err)
-	}
-	ext := ".jsonl"
-	if w.opts.Format == "csv" {
-		ext = ".csv"
-	}
-	w.path = filepath.Join(w.outDir, w.name+ext)
-
-	f, err := os.OpenFile(w.path, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-	if err != nil {
-		return fmt.Errorf("create result file: %w", err)
-	}
-	w.file = f
-
-	if w.opts.Format == "csv" {
-		w.csvOut = newCSVEncoder(f, w.headers)
-	}
-	for _, b := range w.buffered {
-		if err := w.writeRaw(b); err != nil {
-			return err
-		}
-	}
-	w.buffered = nil
-	return nil
-}
-
-func (w *Writer) writeRow(b []byte, row any) error {
-	if w.opts.Format == "csv" {
-		return w.csvOut.encode(row)
-	}
-	return w.writeRaw(b)
-}
-
-func (w *Writer) writeRaw(b []byte) error {
-	if w.opts.Format == "csv" {
-		var m map[string]string
-		if err := json.Unmarshal(b, &m); err != nil {
-			return fmt.Errorf("re-encode buffered row as csv: %w", err)
-		}
-		return w.csvOut.encode(m)
-	}
-	n, err := w.file.Write(append(b, '\n'))
-	w.written += int64(n)
-	return err
-}
-
-// Finish closes any output file and returns the assembled result.
+// Finish returns the assembled result.
 func (w *Writer) Finish(workspaceID, filter string) (Result, error) {
+	if w.rows == nil {
+		w.rows = []json.RawMessage{}
+	}
 	res := Result{
 		Untrusted:   UntrustedFieldsNote,
 		WorkspaceID: workspaceID,
 		Filter:      filter,
 		Returned:    w.count,
 		Truncated:   w.truncated,
+		Rows:        &w.rows,
 	}
-	if w.file == nil {
-		if w.buffered == nil {
-			w.buffered = []json.RawMessage{}
+	switch w.stopped {
+	case "row_limit":
+		res.Note = fmt.Sprintf("stopped at the row limit (%d). Raise limit if your context can hold more, or narrow the filter; matched is the exact total either way.",
+			w.opts.RowLimit)
+	case "max_bytes":
+		res.Note = fmt.Sprintf("stopped at the byte budget (%d bytes of rows). Narrow the filter or ask for fewer fields; matched is the exact total either way.",
+			w.opts.MaxBytes)
+	default:
+		if w.truncated {
+			res.Note = "the result is incomplete; matched is the exact total."
 		}
-		res.Delivery = "inline"
-		res.Rows = &w.buffered
-		return res, nil
 	}
-
-	if w.csvOut != nil {
-		w.csvOut.flush()
-	}
-	if err := w.file.Close(); err != nil {
-		return res, fmt.Errorf("close result file: %w", err)
-	}
-	if fi, err := os.Stat(w.path); err == nil {
-		res.ResultBytes = fi.Size()
-	} else {
-		res.ResultBytes = w.written
-	}
-	if w.sample == nil {
-		w.sample = []json.RawMessage{}
-	}
-	res.Delivery = "file"
-	res.ResultFile = w.path
-	res.Format = w.opts.Format
-	res.Sample = &w.sample
 	return res, nil
 }
 
-// SetMatched records the filter's total match count.
+// SetMatched records the filter's total match count, and with it the number of
+// matched packets the caps left out.
 func SetMatched(res *Result, matched int64) {
 	res.Matched = &matched
+	if omitted := matched - int64(res.Returned); omitted > 0 {
+		res.OmittedRows = omitted
+		res.Truncated = true
+	}
 }
 
 // SetMatchedUnavailable records why the count could not be obtained, so a

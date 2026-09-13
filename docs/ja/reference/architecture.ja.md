@@ -84,7 +84,7 @@
 1. `meta.json` を読み、pcap パスとマウント情報を得る
 2. `podman run --rm ... tshark -r /evidence/capture -Y <filter> -T fields -e <field>... -E header=y -E separator=/t`
 3. stdout を行単位で読みながら JSON 行に変換し、**バイト数を数えながら**積む
-4. `inline_max_bytes` を超えた時点で `work/out/<n>.jsonl` へ切り替え、以降はストリーム書き出し
+4. `max_bytes`（または `limit`）に達した時点で読み取りを止め、落とした分を計上する。ファイルには書かない（ADR-0009）
 5. `truncated` になった場合のみ、件数取得のための追加パス（`-Y <filter> -T fields -e frame.number` を数える）を実行して `matched` を得る
 6. ADR-0005 の統一形状で返す
 

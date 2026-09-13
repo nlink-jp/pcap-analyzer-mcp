@@ -84,7 +84,7 @@ Read `<ws>/meta.json`, scan `work/out/` for `outputs[]`, and return. **No contai
 1. Read `meta.json` for the pcap path and mount information
 2. `podman run --rm ... tshark -r /evidence/capture -Y <filter> -T fields -e <field>... -E header=y -E separator=/t`
 3. Convert stdout line by line into JSON records, **counting bytes while accumulating**
-4. Once `inline_max_bytes` is exceeded, switch to `work/out/<n>.jsonl` and stream from there
+4. Once `max_bytes` (or `limit`) is reached, stop reading and record what was left out — nothing is written to a file (ADR-0009)
 5. Only when `truncated`, run an extra counting pass (`-Y <filter> -T fields -e frame.number`) to obtain `matched`
 6. Return in the unified shape of ADR-0005
 

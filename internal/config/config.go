@@ -78,17 +78,16 @@ type Limits struct {
 // name rather than as an unknown section.
 type Workspace struct{}
 
-// Output implements the size half of the output contract (ADR-0005).
+// Output implements the size half of the output contract (ADR-0005, amended by
+// ADR-0009).
 type Output struct {
-	// InlineMaxBytes is the serialized-byte threshold above which a result
-	// is written to the workspace instead of returned inline. Bytes, not
-	// rows, because a payload column makes row counts meaningless here.
-	InlineMaxBytes int `toml:"inline_max_bytes"`
-	// DefaultRowLimit is the secondary guard.
+	// MaxBytes is the serialized-byte budget for the rows in one response.
+	// Bytes, not rows, because a payload column makes row counts meaningless
+	// here. Rows past the budget are left out of the response and counted;
+	// they are no longer written to a file this server chose (ADR-0009).
+	MaxBytes int `toml:"max_bytes"`
+	// DefaultRowLimit is the other bound, applied to rows.
 	DefaultRowLimit int `toml:"default_row_limit"`
-	// SampleRows is how many leading rows accompany a file-backed result so
-	// the agent never needs a round trip just to learn the shape.
-	SampleRows int `toml:"sample_rows"`
 
 	// MaxConversations bounds the distinct streams list_conversations holds
 	// in memory. The container's memory cgroup does not cover this map, and
@@ -147,9 +146,8 @@ func Default() Config {
 			},
 		},
 		Output: Output{
-			InlineMaxBytes:   65536,
+			MaxBytes:         65536,
 			DefaultRowLimit:  10000,
-			SampleRows:       5,
 			MaxConversations: 200000,
 		},
 		Jobs: Jobs{
@@ -210,6 +208,9 @@ func Load(path string) (Config, error) {
 // removedKeys names keys this server used to honour, so a config still
 // carrying one is told what happened instead of being told it is unknown.
 var removedKeys = map[string]string{
+	"output.inline_max_bytes": "removed in ADR-0009: results are no longer written to a file above a threshold. " +
+		"Use max_bytes, which caps the rows a response carries (what it leaves out is counted, and matched stays exact).",
+	"output.sample_rows": "removed in ADR-0009: there is no file-backed result to sample any more — every row that fits comes back in the response.",
 	"workspace.allowed_paths": "removed in ADR-0008: the capture path is no longer " +
 		"checked against an operator allowlist, only against a fixed blacklist of " +
 		"credential locations. Delete the key (and the [workspace] section if it is " +
@@ -264,17 +265,14 @@ func (c *Config) Validate() error {
 		return fmt.Errorf("container.limits.network must be \"none\" or \"bridge\", got %q",
 			c.Container.Limits.Network)
 	}
-	if c.Output.InlineMaxBytes <= 0 {
-		return fmt.Errorf("output.inline_max_bytes must be positive, got %d", c.Output.InlineMaxBytes)
+	if c.Output.MaxBytes <= 0 {
+		return fmt.Errorf("output.max_bytes must be positive, got %d", c.Output.MaxBytes)
 	}
 	if c.Output.DefaultRowLimit <= 0 {
 		return fmt.Errorf("output.default_row_limit must be positive, got %d", c.Output.DefaultRowLimit)
 	}
 	if c.Output.MaxConversations <= 0 {
 		return fmt.Errorf("output.max_conversations must be positive, got %d", c.Output.MaxConversations)
-	}
-	if c.Output.SampleRows < 0 {
-		return fmt.Errorf("output.sample_rows must not be negative, got %d", c.Output.SampleRows)
 	}
 	if c.Jobs.MaxConcurrent <= 0 {
 		return fmt.Errorf("jobs.max_concurrent must be positive, got %d", c.Jobs.MaxConcurrent)

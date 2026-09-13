@@ -30,9 +30,13 @@ that are specific to *this* project and easy to get wrong.
   per-value nonce-tagged XML; tshark field values get one statement at the head
   of the result, since JSON escaping already makes them unforgeable; and
   server-generated metadata gets nothing.
-- **Honour the output contract in every result-returning tool** (ADR-0005):
-  byte-based threshold, invariant response shape, `matched` always present,
-  `sample` attached whenever the result went to a file, JSONL for large output.
+- **Honour the output contract in every result-returning tool** (ADR-0005 as
+  amended by ADR-0009): rows come back in the response under two explicit
+  bounds — `limit` and the byte budget `max_bytes` — the response shape is the
+  same whether or not a bound bit, `matched` is always present and exact, and
+  whatever a bound left out is counted in `omitted_rows` with a `note` naming
+  the bound. **Never write results to a file this server chose**; a large
+  response on disk is the calling runtime's business.
 - **Amend the ADR before deviating from it.** The ADRs are the source of truth
   for design decisions; code that disagrees with an ADR is a bug in one of them.
 

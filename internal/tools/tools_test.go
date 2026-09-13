@@ -194,7 +194,7 @@ func TestGetUsageMentionsTheContractItPromises(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(b)
-	for _, want := range []string{"matched", "delivery", "workspace", "truncated"} {
+	for _, want := range []string{"matched", "omitted_rows", "workspace", "truncated"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("get_usage never mentions %q, which callers need to interpret results", want)
 		}

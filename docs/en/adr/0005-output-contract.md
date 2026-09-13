@@ -1,6 +1,6 @@
 # ADR-0005: Output contract — byte threshold, JSONL, invariant shape
 
-- Status: Accepted
+- Status: Accepted (file-mediated delivery is withdrawn by [ADR-0009](0009-withdraw-file-mediated-results.md); the byte-based bound, the invariant shape and `matched` all stand)
 - Date: 2026-07-26
 - Driver: magi
 - Revisions: 2026-07-26 — a `delivery` field was added during Track E

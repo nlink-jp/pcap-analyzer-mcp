@@ -7,8 +7,9 @@ An MCP server that lets an AI agent analyse packet captures.
 Agents cannot work with pcap files, and wrapping tshark thinly does not help:
 `tshark -V` produces hundreds of lines for a single packet. `pcap-analyzer-mcp`
 runs a **version-pinned tshark inside a container**, mounts the capture
-**read-only**, and returns small results inline while writing large ones to the
-workspace as JSONL — so an agent can narrow down a GB-scale capture step by
+**read-only**, and returns results in the response under explicit bounds,
+counting whatever they leave out — so an agent can narrow down a GB-scale
+capture step by
 step instead of drowning in its first response.
 
 > **Status: v0.1.0.** Twelve tools, driven end to end against a real container
@@ -71,15 +72,14 @@ find the interesting conversations, then narrow down with a display filter.
 create_workspace(pcap_path, work_dir)  →  workspace_id, sha256, summary
 describe_workspace(workspace_id)            →  packet count, time range, snaplen
 list_conversations(workspace_id)            →  who talked to whom (+ stream index)
-query_packets(workspace_id, filter, fields) →  rows inline, or a JSONL file
+query_packets(workspace_id, filter, fields) →  rows, bounded and counted
 follow_stream(workspace_id, ...)            →  the bytes on the wire
 extract_objects(workspace_id, "http")       →  files, defanged, hashed
 ```
 
 Every call also names `work_dir`: the absolute path of a directory **you can
 read back**, usually your session or working directory. The workspace is
-`<work_dir>/<workspace_id>/`, results too large to return inline are written
-there, and the pair `(work_dir, workspace_id)` is a workspace's whole address —
+`<work_dir>/<workspace_id>/`, extracted objects are written there, and the pair `(work_dir, workspace_id)` is a workspace's whole address —
 this server keeps nothing across restarts. It is required and has no default.
 
 The capture itself may live anywhere you can read; it is mounted read-only and
@@ -109,11 +109,16 @@ client's request timeout.
 
 ### Working with the output
 
-Large results are written as **JSONL**, which is readable with `head` / `grep`
-and loadable directly by DuckDB — including via
-[data-toolbox-mcp](https://github.com/nlink-jp/data-toolbox-mcp), if you want
-SQL over the packet table. Narrowing down is this tool's job; aggregation and
-joins are that one's.
+Rows come back in the response, bounded by `limit` (rows) and by a byte budget
+(`max_bytes`). What the bounds leave out is reported — `truncated`,
+`omitted_rows`, and a `note` naming the bound that stopped it — and `matched`
+stays exact, so a bounded answer is still an answer about the whole capture.
+
+This server does not write results to a file it chose. It cannot know the
+caller's context window, and an agent runtime that needs a large response on
+disk already puts it there. Narrowing down is this tool's job; if you want SQL
+over a packet table, narrow first and hand the rows to
+[data-toolbox-mcp](https://github.com/nlink-jp/data-toolbox-mcp).
 
 Every response reports `matched` (how many packets the filter hit) alongside
 `returned`, so it is always clear whether a filter needs tightening.

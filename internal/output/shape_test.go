@@ -9,7 +9,7 @@ import (
 // the key vanish, which is a shape change like any other — noticed when an
 // unfiltered export came back without it.
 func TestFilterIsEchoedEvenWhenEmpty(t *testing.T) {
-	w := NewWriter(t.TempDir(), "q", nil, Options{InlineMaxBytes: 4096, RowLimit: 10})
+	w := NewWriter(Options{MaxBytes: 4096, RowLimit: 10})
 	res, err := w.Finish("ws", "")
 	if err != nil {
 		t.Fatal(err)

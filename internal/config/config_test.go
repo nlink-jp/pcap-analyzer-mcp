@@ -14,8 +14,8 @@ func TestLoadNoPathReturnsDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load(\"\"): %v", err)
 	}
-	if cfg.Output.InlineMaxBytes != 65536 {
-		t.Errorf("inline_max_bytes: got %d, want 65536", cfg.Output.InlineMaxBytes)
+	if cfg.Output.MaxBytes != 65536 {
+		t.Errorf("max_bytes: got %d, want 65536", cfg.Output.MaxBytes)
 	}
 	if cfg.Container.Limits.Network != "none" {
 		t.Errorf("network: got %q, want \"none\"", cfg.Container.Limits.Network)
@@ -27,7 +27,7 @@ func TestLoadAbsentKeysKeepDefaults(t *testing.T) {
 	path := filepath.Join(dir, "config.toml")
 	// Only one key is set; everything else must retain its default rather
 	// than collapsing to a zero value.
-	if err := os.WriteFile(path, []byte("[output]\ninline_max_bytes = 1024\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("[output]\nmax_bytes = 1024\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -35,14 +35,14 @@ func TestLoadAbsentKeysKeepDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if cfg.Output.InlineMaxBytes != 1024 {
-		t.Errorf("inline_max_bytes: got %d, want 1024", cfg.Output.InlineMaxBytes)
+	if cfg.Output.MaxBytes != 1024 {
+		t.Errorf("max_bytes: got %d, want 1024", cfg.Output.MaxBytes)
 	}
 	if cfg.Output.DefaultRowLimit != 10000 {
 		t.Errorf("default_row_limit should keep its default, got %d", cfg.Output.DefaultRowLimit)
 	}
 	if cfg.Payload.FollowInlineMaxBytes != 8192 {
-		t.Errorf("follow_inline_max_bytes should keep its default, got %d",
+		t.Errorf("follow_max_bytes should keep its default, got %d",
 			cfg.Payload.FollowInlineMaxBytes)
 	}
 }
@@ -77,7 +77,7 @@ func TestValidateRejectsBadValues(t *testing.T) {
 	}{
 		{"empty image", func(c *Config) { c.Container.Image = "" }},
 		{"unknown network", func(c *Config) { c.Container.Limits.Network = "host" }},
-		{"zero inline_max_bytes", func(c *Config) { c.Output.InlineMaxBytes = 0 }},
+		{"zero max_bytes", func(c *Config) { c.Output.MaxBytes = 0 }},
 		{"negative row limit", func(c *Config) { c.Output.DefaultRowLimit = -1 }},
 		{"zero follow cap", func(c *Config) { c.Payload.FollowInlineMaxBytes = 0 }},
 		{"zero object cap", func(c *Config) { c.Payload.ExtractMaxObjectBytes = 0 }},
