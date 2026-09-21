@@ -17,9 +17,20 @@ import (
 // rule about every tool, not about one of them. Stated only in prose it gets
 // re-decided by whoever adds the next tool, so it is pinned here.
 
+// everyTool is the floor under every per-tool loop: with an empty list, each
+// contract would pass without having examined anything.
+func everyTool(t *testing.T, d *Deps) []registration {
+	t.Helper()
+	all := d.all()
+	if len(all) == 0 {
+		t.Fatal("no tools are registered, so every per-tool contract would pass without examining one")
+	}
+	return all
+}
+
 func TestNoToolSchemaCarriesARetiredWorkDirName(t *testing.T) {
 	d := newDeps(&fakeRunner{})
-	for _, r := range d.all() {
+	for _, r := range everyTool(t, d) {
 		for _, old := range retiredWorkDirNames {
 			if strings.Contains(string(r.desc.InputSchema), `"`+old+`"`) {
 				t.Errorf("tool %q declares %q; the name is work_dir", r.desc.Name, old)
@@ -32,7 +43,7 @@ func TestNoToolSchemaCarriesARetiredWorkDirName(t *testing.T) {
 // default, which is the failure the contract removes.
 func TestWorkDirIsRequiredWhereverItIsDeclared(t *testing.T) {
 	d := newDeps(&fakeRunner{})
-	for _, r := range d.all() {
+	for _, r := range everyTool(t, d) {
 		var schema struct {
 			Required   []string                   `json:"required"`
 			Properties map[string]json.RawMessage `json:"properties"`
@@ -133,7 +144,7 @@ func TestModelFacingProseNamesNoWithdrawnMechanism(t *testing.T) {
 	withdrawn := []string{"JSONL", "result_file", "results file", "sample_rows", "inline_max_bytes"}
 	d := newDeps(&fakeRunner{})
 	texts := map[string]string{}
-	for _, r := range d.all() {
+	for _, r := range everyTool(t, d) {
 		texts["tool "+r.desc.Name+" description"] = r.desc.Description
 		texts["tool "+r.desc.Name+" schema"] = string(r.desc.InputSchema)
 	}
@@ -162,7 +173,7 @@ func TestModelFacingProseNamesNoWithdrawnMechanism(t *testing.T) {
 // catches it either.
 func TestEveryRequiredNameIsDeclared(t *testing.T) {
 	d := newDeps(&fakeRunner{})
-	for _, tool := range d.all() {
+	for _, tool := range everyTool(t, d) {
 		var schema struct {
 			Properties map[string]json.RawMessage `json:"properties"`
 			Required   []string                   `json:"required"`

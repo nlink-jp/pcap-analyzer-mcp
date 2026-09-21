@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Tests
+
+- The per-tool contract tests fail when no tool is registered. They loop over
+  the registered tools, and with an empty list every one of them passed without
+  examining anything.
+
 ## [0.4.0] - 2026-09-21
 
 ### Fixed

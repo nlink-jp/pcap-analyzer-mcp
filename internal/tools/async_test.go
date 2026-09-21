@@ -24,7 +24,7 @@ func TestAsyncIsOfferedExactlyWhereItShouldBe(t *testing.T) {
 		"query_packets":      true,
 		"extract_objects":    true,
 	}
-	for _, r := range newDeps(&fakeRunner{}).all() {
+	for _, r := range everyTool(t, newDeps(&fakeRunner{})) {
 		var schema struct {
 			Properties map[string]any `json:"properties"`
 		}
