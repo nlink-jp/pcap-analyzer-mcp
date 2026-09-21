@@ -136,8 +136,8 @@ func contains(haystack []string, want string) bool {
 }
 
 // A schema test catches a renamed argument; it does not catch a sentence. The
-// prose the model reads — tool descriptions, the usage manual, the container
-// manifest — drifts silently because nothing compiles it, and after ADR-0009
+// prose the model reads — tool descriptions, the usage manual, the initialize
+// instructions, the container manifest — drifts silently because nothing compiles it, and after ADR-0009
 // withdrew file-mediated results the help text still promised JSONL in the
 // workspace. This is what compiles the prose.
 func TestModelFacingProseNamesNoWithdrawnMechanism(t *testing.T) {
@@ -149,6 +149,7 @@ func TestModelFacingProseNamesNoWithdrawnMechanism(t *testing.T) {
 		texts["tool "+r.desc.Name+" schema"] = string(r.desc.InputSchema)
 	}
 	texts["usage manual"] = fmt.Sprint(usageDoc(65536, 500))
+	texts["initialize instructions"] = Instructions
 	for _, old := range retiredWorkDirNames {
 		withdrawn = append(withdrawn, old)
 	}

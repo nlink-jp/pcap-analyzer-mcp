@@ -40,6 +40,31 @@ func describePayload(ws *workspace.Workspace, outputs []map[string]any) map[stri
 	return payload
 }
 
+// Instructions is the initialize-time hint (the MCP `instructions` field): the
+// first text a client's model reads about this server, before any tool list.
+// It states the work-directory contract (organization ADR-021, project
+// ADR-0008) and points at get_usage for everything else. Every tool it names
+// must be registered, and its list of tools without work_dir must match the
+// schemas — instructions_test.go checks both against the registered tools.
+const Instructions = "pcap-analyzer-mcp analyses pcap and pcapng captures with tshark in a container; " +
+	"the capture is mounted read-only and never copied. " +
+	"Every tool except " + toolsWithoutWorkDir + " requires work_dir: the absolute path of a " +
+	"directory you can read back (your session or working directory), and there is no default. " +
+	"create_workspace opens a capture as the workspace <work_dir>/<workspace_id>/, and every file " +
+	"the tools write lands under it: extract_objects returns the paths of the files it recovers " +
+	"there, while analysis results come back in the response itself. " +
+	"Heavy tools accept async: true for a large capture and return a job_id at once, which you poll " +
+	"with check_job. " +
+	"Call get_usage before your first analysis to learn the workspace model, the bounds every result " +
+	"is held to, and the error recovery table."
+
+// toolsWithoutWorkDir names, in Instructions, the registered tools whose
+// schema declares no work_dir. It is a separate constant so the test can hold
+// the claim to the schemas in both directions: a tool added without work_dir,
+// or one of these gaining it, fails the build instead of leaving the model
+// told something untrue.
+const toolsWithoutWorkDir = "get_usage, describe_runtime and check_job"
+
 func (d *Deps) getUsage() registration {
 	return registration{
 		desc: mcpserver.Tool{

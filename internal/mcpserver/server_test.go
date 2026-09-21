@@ -78,6 +78,57 @@ func TestBasicRoundTrip(t *testing.T) {
 	}
 }
 
+// initializeFields drives one initialize request and returns the result object
+// as raw fields, so a test can tell an absent key from an empty one.
+func initializeFields(t *testing.T, configure func(*Server)) map[string]json.RawMessage {
+	t.Helper()
+	srv, out := newTestServer(t, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`+"\n")
+	if configure != nil {
+		configure(srv)
+	}
+	if err := srv.Serve(context.Background()); err != nil {
+		t.Fatalf("serve: %v", err)
+	}
+	var resp struct {
+		Result map[string]json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(out.Bytes()), &resp); err != nil {
+		t.Fatalf("decode initialize response: %v\nraw: %s", err, out.String())
+	}
+	if resp.Result == nil {
+		t.Fatalf("initialize returned no result: %s", out.String())
+	}
+	return resp.Result
+}
+
+// The instructions are the first text a client's model reads about this
+// server, before any tool list; what SetInstructions was given must be what
+// initialize carries.
+func TestInitializeCarriesInstructions(t *testing.T) {
+	const want = "call get_usage first"
+	result := initializeFields(t, func(s *Server) { s.SetInstructions(want) })
+	raw, ok := result["instructions"]
+	if !ok {
+		t.Fatalf("initialize result has no instructions field: %v", result)
+	}
+	var got string
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("instructions is not a string: %s", raw)
+	}
+	if got != want {
+		t.Errorf("instructions = %q, want %q", got, want)
+	}
+}
+
+// With nothing set the field is omitted rather than sent as "": an empty hint
+// is noise a client may still paste into its model's context.
+func TestInitializeOmitsUnsetInstructions(t *testing.T) {
+	result := initializeFields(t, nil)
+	if raw, ok := result["instructions"]; ok {
+		t.Errorf("initialize sent instructions %s with none set; the field should be omitted", raw)
+	}
+}
+
 // TestParseError checks that malformed JSON gets a parse-error response with id=null.
 func TestParseError(t *testing.T) {
 	srv, out := newTestServer(t, "not-json\n")

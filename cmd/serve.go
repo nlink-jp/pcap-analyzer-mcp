@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"context"
+	"log/slog"
 	"os"
 
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/config"
@@ -36,17 +38,26 @@ Transport is stdio only; HTTP/SSE is out of scope (architecture.md §8).`,
 			defer closer.Close()
 		}
 
-		pc := podman.New()
-		srv := mcpserver.New("pcap-analyzer-mcp", Version,
-			transport.NewStdioTransport(os.Stdin, os.Stdout), logger)
-
 		// Background jobs must outlive the request that started them, so they
 		// run under the command's context rather than a request one.
-		tools.Register(srv, newToolDeps(cmd.Context(), cfg, pc, configPath))
+		srv := newServer(cmd.Context(), cfg, podman.New(), configPath,
+			transport.NewStdioTransport(os.Stdin, os.Stdout), logger)
 
 		logger.Info("serving", "version", Version, "image", cfg.Container.Image)
 		return srv.Serve(cmd.Context())
 	},
+}
+
+// newServer builds the MCP server exactly as serve runs it: the instructions a
+// client's model reads at initialize, and every tool wired to the deps
+// newToolDeps assembles. It is separate from RunE so a test can drive the
+// served server over a transport of its own.
+func newServer(serverCtx context.Context, cfg config.Config, pc tools.ContainerRunner, cfgPath string,
+	tr *transport.StdioTransport, logger *slog.Logger) *mcpserver.Server {
+	srv := mcpserver.New("pcap-analyzer-mcp", Version, tr, logger)
+	srv.SetInstructions(tools.Instructions)
+	tools.Register(srv, newToolDeps(serverCtx, cfg, pc, cfgPath))
+	return srv
 }
 
 func init() {

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **The server now sends MCP `instructions` at initialize**, as every other
+  work-directory MCP server in the organization does. A client hands this text
+  to its model before any tool list, so the work-directory contract no longer
+  has to be discovered from the schemas: every tool except `get_usage`,
+  `describe_runtime` and `check_job` requires `work_dir` (absolute, no
+  default), the workspace is `<work_dir>/<workspace_id>/`, heavy tools take
+  `async: true` and are collected with `check_job`, and `get_usage` holds the
+  rest. Tests hold every tool it names to the registered tools, and its list of
+  tools without `work_dir` to their schemas, in both directions.
+
 ### Tests
 
 - The per-tool contract tests fail when no tool is registered. They loop over

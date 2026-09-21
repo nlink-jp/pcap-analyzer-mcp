@@ -79,6 +79,15 @@ darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
 `describe_workspace` is the free one — it reads the `capinfos` cache and starts
 no container. Expect it to be the most-called tool.
 
+The MCP `instructions` sent at initialize are `tools.Instructions` in
+`internal/tools/usage.go`, set by `newServer` in `cmd/serve.go` (the only place
+the served server is built). They state the work-directory contract and point
+at `get_usage`. The tools that take no `work_dir` are named through the
+`toolsWithoutWorkDir` constant, and `internal/tools/instructions_test.go` holds
+that list to the schemas in both directions and every tool name in the text to
+`(*Deps).all()` — adding a tool without `work_dir`, or renaming one the text
+mentions, fails the tests until the instructions are updated.
+
 ## Gotchas
 
 - **`-z conv,tcp` does not carry `tcp.stream`** — confirmed against tshark 4.0.17. Its row order does not even match stream order, so there is no way to recover the index from it. `list_conversations` is the entry point to `follow_stream`, so build it from `-T fields -e tcp.stream ...` with server-side aggregation.

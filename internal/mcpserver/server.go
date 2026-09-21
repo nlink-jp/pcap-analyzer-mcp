@@ -34,12 +34,13 @@ type ToolHandler func(ctx context.Context, args json.RawMessage) (any, error)
 
 // Server is the MCP stdio server.
 type Server struct {
-	name      string
-	version   string
-	tools     []Tool
-	handlers  map[string]ToolHandler
-	transport *transport.StdioTransport
-	logger    *slog.Logger
+	name         string
+	version      string
+	instructions string
+	tools        []Tool
+	handlers     map[string]ToolHandler
+	transport    *transport.StdioTransport
+	logger       *slog.Logger
 }
 
 // New creates a server bound to the given transport.
