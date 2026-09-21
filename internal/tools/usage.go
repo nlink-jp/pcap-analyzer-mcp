@@ -133,7 +133,7 @@ func usageDoc(maxBytes, defaultRowLimit int) map[string]any {
 			"work_dir_invalid":      "Not absolute, started with ~, or contained `..`.",
 			"work_dir_not_found":    "The directory is not there, or is not a directory. It is yours, so this is a typo — this server does not create it.",
 			"work_dir_not_writable": "This server cannot write there.",
-			"work_dir_denied":       "A system location, your home directory itself, or a credential directory.",
+			"work_dir_denied":       "A system location, your home directory itself, a credential directory, or one of this server's own config directories (~/.config/pcap-analyzer-mcp, or the directory holding the config file in use).",
 			"container_failed":      "podman could not run. `pcap-analyzer-mcp doctor` diagnoses this.",
 			"payload_unavailable_truncated_capture": "The capture has no payload to extract. " +
 				"This is a property of the evidence; retrying will not change it. Note that a " +

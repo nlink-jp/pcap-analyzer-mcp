@@ -167,6 +167,20 @@ func Default() Config {
 	}
 }
 
+// ResolvePath reports the config file this invocation reads: the explicit
+// path, else EnvConfigPath, else "" — meaning no file and the built-in
+// defaults.
+//
+// Load calls it, and so does the wiring that denies the server's own config
+// directory as a work directory (organization ADR-021 §4). One expression, so
+// the denial cannot come to disagree with what is actually being read.
+func ResolvePath(explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
+	return os.Getenv(EnvConfigPath)
+}
+
 // Load reads config.toml from path, or from EnvConfigPath, or returns the
 // defaults when neither is set. A path that is set but unreadable is an
 // error: silently falling back to defaults would hide a typo in the one
@@ -174,9 +188,7 @@ func Default() Config {
 func Load(path string) (Config, error) {
 	cfg := Default()
 
-	if path == "" {
-		path = os.Getenv(EnvConfigPath)
-	}
+	path = ResolvePath(path)
 	if path == "" {
 		if err := cfg.Validate(); err != nil {
 			return Config{}, err

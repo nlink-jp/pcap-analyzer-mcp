@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **`work_dir` may no longer be one of this server's own config directories.**
+  Organization ADR-021 §4 closes the work-directory checks with "not a system
+  location … and not the server's own config or state directory" →
+  `work_dir_denied`, and the resolver has carried a `Denied` list for exactly
+  that — but nothing populated it here, so it ran as its zero value. A caller
+  could name this server's config directory as its `work_dir` and have the
+  server create workspaces there, mount captures from it into a container and
+  write extracted objects beside the file that sets the server's own limits,
+  on a model's say-so. Now refused, subdirectories included:
+  `~/.config/pcap-analyzer-mcp`, and the directory holding the config file in
+  use when `--config` or `PCAP_ANALYZER_MCP_CONFIG` names one — so an operator
+  who keeps the config file in a directory they also work in should give it a
+  directory of its own. The log file's directory is deliberately not denied:
+  it is operator-chosen and routinely broad, and a tree that wide would refuse
+  work directories callers legitimately use.
+- The path in use comes from one new expression, `config.ResolvePath`, which
+  `Load` now calls too, so the denial cannot come to disagree with what is
+  actually being read.
+
 ## [0.2.2] - 2026-09-14
 
 ### Added

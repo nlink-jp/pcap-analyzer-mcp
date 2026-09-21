@@ -4,13 +4,11 @@ import (
 	"os"
 
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/config"
-	"github.com/nlink-jp/pcap-analyzer-mcp/internal/job"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/logging"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/mcpserver"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/podman"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/tools"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/transport"
-	"github.com/nlink-jp/pcap-analyzer-mcp/internal/workspace"
 	"github.com/spf13/cobra"
 )
 
@@ -42,15 +40,9 @@ Transport is stdio only; HTTP/SSE is out of scope (architecture.md §8).`,
 		srv := mcpserver.New("pcap-analyzer-mcp", Version,
 			transport.NewStdioTransport(os.Stdin, os.Stdout), logger)
 
-		tools.Register(srv, &tools.Deps{
-			Cfg:       cfg,
-			Podman:    pc,
-			Workspace: workspace.NewManager(cfg, pc),
-			Jobs:      job.NewManager(cfg.Jobs.MaxConcurrent),
-			// Background jobs must outlive the request that started them, so
-			// they run under the command's context rather than a request one.
-			ServerCtx: cmd.Context(),
-		})
+		// Background jobs must outlive the request that started them, so they
+		// run under the command's context rather than a request one.
+		tools.Register(srv, newToolDeps(cmd.Context(), cfg, pc, configPath))
 
 		logger.Info("serving", "version", Version, "image", cfg.Container.Image)
 		return srv.Serve(cmd.Context())
