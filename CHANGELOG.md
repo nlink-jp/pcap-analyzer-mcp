@@ -130,8 +130,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exist (the server does not create it), be writable, and not be a system
   location, the home directory itself, or a credential directory.
 
-## [Unreleased]
-
 ### Fixed
 
 - **A job no longer starts while the server is shutting down.** A queued job
