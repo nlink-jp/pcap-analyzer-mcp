@@ -3,7 +3,9 @@
 # Every value below is a default — an absent config.toml is a valid
 # configuration. Copy this file only to change something.
 #
-# Location: pass --config <path>, or set PCAP_ANALYZER_MCP_CONFIG.
+# Location: ~/.config/pcap-analyzer-mcp/config.toml is read when it exists.
+# Override with --config <path> or PCAP_ANALYZER_MCP_CONFIG (either takes
+# precedence, and a path named there that cannot be read is an error).
 
 [container]
 # The analysis image, built locally by `pcap-analyzer-mcp build-runtime`.

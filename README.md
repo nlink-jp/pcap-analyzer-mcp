@@ -147,8 +147,19 @@ Payload never reaches the log file, at any log level.
 ## Configuration
 
 Configuration is optional; every value has a working default. See
-[`config.example.toml`](config.example.toml). Pass `--config <path>` or set
-`PCAP_ANALYZER_MCP_CONFIG`.
+[`config.example.toml`](config.example.toml).
+
+The config file is looked for in this order, and the first one found wins:
+
+1. `--config <path>`
+2. `PCAP_ANALYZER_MCP_CONFIG`
+3. `~/.config/pcap-analyzer-mcp/config.toml`
+
+A path you name in (1) or (2) that cannot be read is an error, because a typo
+there should not read as "use the defaults". (3) is consulted, not demanded: no
+file means the built-in defaults. The working directory is **not** searched —
+this server is started by an agent runtime that chooses its own cwd, so a
+`./config.toml` would make the configuration depend on who launched it.
 
 ## Documentation
 

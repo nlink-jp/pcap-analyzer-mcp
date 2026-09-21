@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/config"
@@ -53,8 +52,10 @@ func workDirResolver(cfgPath string) workdir.Resolver {
 // left is configuration, in two forms:
 //
 //   - the conventional per-server directory `~/.config/pcap-analyzer-mcp`,
-//     which is where this server's config.toml belongs and is named here
-//     whether or not a file is in it today;
+//     which is where this server's config.toml belongs — it is searched by
+//     config.ResolvePath and named here whether or not a file is in it,
+//     since a workspace put there would collide with a config file added
+//     later;
 //   - the directory holding the config file actually in use, when `--config`
 //     or `PCAP_ANALYZER_MCP_CONFIG` names one. An operator who points that at
 //     a directory shared with other work — `--config ./config.toml` in a
@@ -82,10 +83,8 @@ func serverOwnedDirs(cfgPath string) []string {
 
 // configDir is the conventional directory for this server's own config.toml.
 // Empty when the home directory cannot be determined.
-func configDir() string {
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return ""
-	}
-	return filepath.Join(home, ".config", "pcap-analyzer-mcp")
-}
+//
+// Delegated rather than repeated: the loader searches this directory, so a
+// second copy of the expression here could come to deny a directory other than
+// the one being read.
+func configDir() string { return config.ConventionalDir() }

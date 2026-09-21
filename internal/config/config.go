@@ -167,24 +167,77 @@ func Default() Config {
 	}
 }
 
-// ResolvePath reports the config file this invocation reads: the explicit
-// path, else EnvConfigPath, else "" — meaning no file and the built-in
-// defaults.
+// ConventionalDir is the per-server config directory the org uses,
+// ~/.config/pcap-analyzer-mcp. Empty when the home directory cannot be
+// determined.
 //
-// Load calls it, and so does the wiring that denies the server's own config
+// Both the search below and the work-directory denial in cmd are this one
+// expression, so the directory that gets read and the directory that gets
+// refused cannot drift apart.
+func ConventionalDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return ""
+	}
+	return filepath.Join(home, ".config", "pcap-analyzer-mcp")
+}
+
+// DefaultPath is the config file consulted when neither --config nor
+// EnvConfigPath names one. Empty when there is no home directory to put it in.
+func DefaultPath() string {
+	dir := ConventionalDir()
+	if dir == "" {
+		return ""
+	}
+	return filepath.Join(dir, "config.toml")
+}
+
+// ResolvePath reports the config file this invocation reads: the explicit
+// path, else EnvConfigPath, else DefaultPath when a file is actually there,
+// else "" — meaning no file and the built-in defaults.
+//
+// The default location is only returned when it exists, because an absent
+// default is not a mistake — an absent config file is a valid configuration
+// here. An explicit path is returned whether or not it exists, so that Load
+// can fail on it: a path someone typed and got wrong must not read as "use the
+// defaults".
+//
+// Load calls this, and so does the wiring that denies the server's own config
 // directory as a work directory (organization ADR-021 §4). One expression, so
 // the denial cannot come to disagree with what is actually being read.
+//
+// The current working directory is deliberately not searched, unlike some
+// sibling servers. This process is spawned by an agent runtime that chooses
+// its own cwd, so a ./config.toml candidate would make the configuration
+// depend on who started the server — pin: TestResolvePathIgnoresTheWorkingDirectory.
 func ResolvePath(explicit string) string {
 	if explicit != "" {
 		return explicit
 	}
-	return os.Getenv(EnvConfigPath)
+	if fromEnv := os.Getenv(EnvConfigPath); fromEnv != "" {
+		return fromEnv
+	}
+	def := DefaultPath()
+	if def == "" {
+		return ""
+	}
+	// A directory named config.toml is not a config file; reporting it would
+	// turn a mistake in the filesystem into an unreadable-file error further
+	// away from its cause.
+	if st, err := os.Stat(def); err != nil || st.IsDir() {
+		return ""
+	}
+	return def
 }
 
-// Load reads config.toml from path, or from EnvConfigPath, or returns the
-// defaults when neither is set. A path that is set but unreadable is an
-// error: silently falling back to defaults would hide a typo in the one
-// place the user tried to be explicit.
+// Load reads the config file ResolvePath names — the explicit path, the one
+// EnvConfigPath points at, or ~/.config/pcap-analyzer-mcp/config.toml when it
+// exists — and returns the built-in defaults when there is none.
+//
+// A path that was *asked for* but is unreadable is an error: silently falling
+// back to defaults would hide a typo in the one place the user tried to be
+// explicit. The default location is different — it is consulted, not demanded,
+// and its absence is a valid configuration.
 func Load(path string) (Config, error) {
 	cfg := Default()
 

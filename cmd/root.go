@@ -58,5 +58,5 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", "",
-		"path to config.toml (default: search the standard locations)")
+		"path to config.toml (default: ~/.config/pcap-analyzer-mcp/config.toml, or PCAP_ANALYZER_MCP_CONFIG)")
 }

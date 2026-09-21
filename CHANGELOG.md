@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **`~/.config/pcap-analyzer-mcp/config.toml` is now read.** The `--config`
+  flag's help said the default was to "search the standard locations", but the
+  loader consulted only the explicit path and `PCAP_ANALYZER_MCP_CONFIG` — so a
+  config.toml in the conventional directory was silently ignored while the help
+  promised it worked. Resolution is now: `--config`, else
+  `PCAP_ANALYZER_MCP_CONFIG`, else `~/.config/pcap-analyzer-mcp/config.toml`
+  when a file is there, else the built-in defaults. Every sibling MCP server in
+  the fleet already searched that directory.
+
+  **This is a behaviour change:** a config.toml sitting in that directory
+  starts taking effect. If one is there and you had given up on it, read it
+  before upgrading — its values now apply, and a malformed one is an error
+  rather than a silent fallback, on the grounds that a config the operator
+  believes is in force must not be ignored.
+
+  The working directory is deliberately not searched, unlike some siblings that
+  also look at `./config.toml`: this server is spawned by an agent runtime that
+  chooses its own cwd, so that candidate would make the configuration depend on
+  who started it. Pinned by a test.
+
 ## [0.3.0] - 2026-09-21
 
 ### Security
