@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rest. Tests hold every tool it names to the registered tools, and its list of
   tools without `work_dir` to their schemas, in both directions.
 
+### Fixed
+
+- `get_usage` said "Every call names work_dir"; `get_usage`, `describe_runtime`
+  and `check_job` take none. It now names the exceptions, from the same list the
+  instructions use.
+
 ### Tests
 
 - The per-tool contract tests fail when no tool is registered. They loop over

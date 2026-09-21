@@ -84,7 +84,7 @@ func usageDoc(maxBytes, defaultRowLimit int) map[string]any {
 		"model": []string{
 			"A workspace binds one capture to one directory. create_workspace opens a " +
 				"capture and reads it once; everything after that refers to the workspace_id.",
-			"Every call names work_dir: the absolute path of a directory you can read back, " +
+			"Every tool except " + toolsWithoutWorkDir + " names work_dir: the absolute path of a directory you can read back, " +
 				"usually your session or working directory. The workspace is " +
 				"<work_dir>/<workspace_id>/ and every file this server writes lands under it. " +
 				"It is required and has no default, and the pair (work_dir, workspace_id) is " +
