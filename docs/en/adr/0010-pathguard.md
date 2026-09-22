@@ -78,16 +78,40 @@ home directory redirected to a temporary one (all 7 pairs got different answers)
   followed, a dangling one by its target — for a path that exists, what `EvalSymlinks` returns), judges
   it as given and as placed (`refused`), and only then asks existence of the place
   (`EvalSymlinks(where)`). When it resolves elsewhere than it was placed (it changed in between), it is
-  judged again there. A refusal's `details.resolved` is the place, which does not depend on existence.
+  judged again there.
+- A refusal names the path only as given; `details` no longer carries `resolved`. The place differs
+  when an entry on the way is a link (`~/.ssh/config` into a sync folder, a dotfiles-linked `~/.aws`),
+  so a dangling link and no entry got different values, and the value said which entries exist and
+  where they lead; for a loop it named a hop the caller never gave (the independent review of this
+  change found it).
 - A chain of links that does not end is `path_not_allowed` (pathguard's unresolvable), not
   `pcap_unreadable`.
 - A path that does not resolve gets no branch of its own.
 - `TestExistenceIsNotRevealed` (internal/tools) calls `create_workspace` with the same path while a
   file is there and after it is removed and compares the whole answer. `TestPlacementCorners` pins a
-  link climbing with `..` and a loop. Four mutations (the old order, the floor removed, existence
-  re-walked from the spelling, no placement) all fail by assertion.
-- The known exception: a hard link to a credential file made elsewhere is refused by identity only
-  while it exists. Whoever can make one already reaches the file.
+  link climbing with `..` and a loop. Five mutations (the old order, the floor removed, existence
+  re-walked from the spelling, no placement, the place put back into the refusal) all fail by
+  assertion; the credential entry that is a link and the credential directory that is a link are in
+  the table.
+- Two answers change besides the refusals. A relative `pcap_path` under a working directory reached
+  through a link is now resolved all the way, as its absolute spelling always was, so its workspace id
+  changes. A path with `..` after a file or a missing name is placed as pathguard places it (the `..`
+  applied to what exists), so it is opened there rather than answered "not a directory" / "no such
+  file" as the kernel would.
+- Known limits, all in pathguard and recorded for its next release:
+  - A `..` that climbs out through an entry of a credential directory — in the path, or in the target
+    of a planted link — is judged where it leads, not where it passes, so the answer can still show
+    whether that entry is a link and where its target lies: pathguard judges cleaned forms, not the
+    directories a walk passes through.
+  - The place is the last of pathguard's forms. When a chain of links comes back to a spelling already
+    met, that is an earlier hop rather than the end; every hop has been judged, so nothing unjudged is
+    opened, but a file reached that way can be reported missing or read from the earlier hop.
+    pathguard does not expose the final place.
+  - `work_dir` is validated by pathguard/workdir in the order organization ADR-022 §4 sets (not found
+    before denied), so a `work_dir` naming a credential directory is answered by whether it exists.
+  - A link target with a non-ASCII name spelled in another Unicode normalisation is found by identity
+    only while it exists (pathguard does not normalise), and so is a hard link to a credential file
+    made elsewhere. Whoever can make a hard link already reaches the file.
 
 ## References
 

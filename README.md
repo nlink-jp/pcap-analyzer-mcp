@@ -94,7 +94,7 @@ give the config file a directory of its own rather than one you also work in.
 The capture itself may live anywhere you can read; it is mounted read-only and
 never copied. The only refused locations are credential and agent-control
 directories such as `~/.ssh` and `~/.aws`, refused whether or not a file is
-there, so the answer never says which of them exist.
+there, with the same answer either way.
 
 ### Tools
 
