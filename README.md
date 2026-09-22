@@ -95,6 +95,7 @@ The capture itself may live anywhere you can read; it is mounted read-only and
 never copied. The only refused locations are credential and agent-control
 directories such as `~/.ssh` and `~/.aws`, refused whether or not a file is
 there, with the same answer either way.
+Two spellings still get past it — a name in another Unicode normalisation and a hard link; the limits are listed in [ADR-0010](docs/en/adr/0010-pathguard.md).
 
 ### Tools
 
