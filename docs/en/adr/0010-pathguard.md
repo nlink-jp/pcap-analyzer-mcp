@@ -55,6 +55,16 @@ lagent's.
 
 With no copy here, a fix to the judgement is a pathguard release and a one-line dependency update.
 
+## Amendment (2026-09-22): judge the directory actually used
+
+Only `work_dir` was checked, so `work_dir=~/.config` with `workspace_id=gh` reached `~/.config/gh` (a
+workspace could be created there and its `work/` mounted into the container). The hole dates from
+ADR-0008; image-forge's independent review found it. `workspace.NewManager(cfg, runner, check)` takes
+the judgement as a required argument, and `Create` and `Load` (which `PreviewDelete` and `Delete`
+go through) judge the workspace directory with `workdir.Resolver.CheckBeneath` (pathguard v0.2.0)
+first; `newToolDeps` wires it. A Manager without one refuses every workspace. pathguard v0.2.0 also
+refuses a path holding a NUL byte.
+
 ## References
 
 - Organization ADR-021 (the work-dir contract of the file-mediated MCP servers)

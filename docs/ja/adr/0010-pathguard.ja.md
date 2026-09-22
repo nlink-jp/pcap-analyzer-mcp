@@ -49,6 +49,15 @@ ADR-0008 以来、`work_dir` の検証と、読み取りのブラックリスト
 
 写しを持たないので、判定の修正は pathguard のリリースと、ここでの依存の更新 1 行になる。
 
+## Amendment (2026-09-22): 実際に使うディレクトリも判定する
+
+`work_dir` だけを検査していたので、`work_dir=~/.config` と `workspace_id=gh` で `~/.config/gh` に届いた（ワークスペースを
+作り、その `work/` をコンテナにマウントできた）。ADR-0008 の頃からの穴で、image-forge の独立レビューで見つかった。
+`workspace.NewManager(cfg, runner, check)` は判定を必須の引数として受け取り、`Create` と `Load`（`PreviewDelete`・
+`Delete` はこれを通る）は、ワークスペースのディレクトリを最初に `workdir.Resolver.CheckBeneath`（pathguard v0.2.0）で
+判定する。配線は `newToolDeps`。判定の無い Manager はすべてのワークスペースを拒む。pathguard v0.2.0 は NUL バイトを
+含むパスも拒む。
+
 ## References
 
 - 組織 ADR-021（ファイル渡し MCP サーバーの work dir 契約）
