@@ -83,6 +83,19 @@ func (r Resolver) Validate(dir string) (string, error) {
 // it, and symlink-resolved. An unknown home directory refuses.
 func Sensitive(paths ...string) string { return pgwd.Sensitive(paths...) }
 
+// Where returns where p is, or would be: every link on it followed, a dangling
+// one by its target, and the rest appended — for a path that exists, what
+// filepath.EvalSymlinks returns. It is the last of pathguard's forms of p, so
+// a path is placed the same way whether or not anything is there, and the
+// floor is asked about that place before anything asks whether it exists.
+func Where(p string) string {
+	f := pathguard.Forms(p)
+	if len(f) == 0 {
+		return p
+	}
+	return f[len(f)-1]
+}
+
 // CheckBeneath reports why dir — <work_dir>/<workspace_id>, the directory a
 // call actually uses, which may not exist yet — may not be used, as a
 // work_dir_denied toolerr, or nil. The workspace manager calls it before it

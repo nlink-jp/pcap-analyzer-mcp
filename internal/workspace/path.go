@@ -61,13 +61,22 @@ func WorkspacePath(root, id string) (string, error) {
 // credential and agent-control locations, and it is a floor, not a boundary:
 // bounding what this process may touch at all is a sandboxing proxy's job.
 //
-// Resolution happens first, so a symlink planted anywhere cannot point into a
-// blacklisted directory (the check ADR-0004 asked for, kept).
+// The path is placed first (workdir.Where: every link followed, a dangling
+// one by its target), so a symlink planted anywhere cannot point into a
+// blacklisted directory (the check ADR-0004 asked for, kept), and it is judged
+// there, as given and as placed, before anything asks whether it exists: a
+// capture that exists and one that does not get the same answer, message and
+// details included, so no answer tells the caller which secrets exist.
+// Existence is then asked of the place, not re-walked from the spelling.
 func ResolveInput(path string) (string, error) {
 	if path == "" {
 		return "", toolerr.New(toolerr.CodeMissingArgument, "pcap_path is required")
 	}
-	resolved, err := filepath.EvalSymlinks(path)
+	where := workdir.Where(path)
+	if err := refused(path, where); err != nil {
+		return "", err
+	}
+	resolved, err := filepath.EvalSymlinks(where)
 	if err != nil {
 		return "", toolerr.Newf(toolerr.CodePcapUnreadable, "%v", err).
 			WithDetails(map[string]any{"pcap_path": path})
@@ -76,15 +85,27 @@ func ResolveInput(path string) (string, error) {
 	if err != nil {
 		return "", toolerr.Newf(toolerr.CodePcapUnreadable, "%v", err)
 	}
-	// Both spellings go to the check: a blacklisted directory may itself be a
-	// symlink (see workdir.Sensitive), so the resolved form alone is not
-	// enough, and the unresolved form alone would miss a planted link.
-	if why := workdir.Sensitive(path, resolved); why != "" {
-		return "", toolerr.Newf(toolerr.CodePathNotAllowed,
-			"%s is refused: %s", path, why).
-			WithDetails(map[string]any{"pcap_path": path, "resolved": resolved})
+	// It resolved somewhere other than it was placed: it changed in between.
+	// Judge where it now leads.
+	if resolved != where {
+		if err := refused(path, resolved); err != nil {
+			return "", err
+		}
 	}
 	return resolved, nil
+}
+
+// refused is the floor on a capture path, as given and at its place. Both
+// spellings go to the check: a blacklisted directory may itself be a symlink
+// (see workdir.Sensitive), so the placed form alone is not enough, and the
+// given form alone would miss a planted link.
+func refused(path, where string) error {
+	if why := workdir.Sensitive(path, where); why != "" {
+		return toolerr.Newf(toolerr.CodePathNotAllowed,
+			"%s is refused: %s", path, why).
+			WithDetails(map[string]any{"pcap_path": path, "resolved": where})
+	}
+	return nil
 }
 
 // DeriveWorkspaceID builds a stable, readable id for a capture.

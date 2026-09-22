@@ -92,9 +92,9 @@ func TestResolveInputRefusesCredentialLocations(t *testing.T) {
 	}
 }
 
-// Resolution happens before the blacklist check, so a link planted in an
-// ordinary directory cannot smuggle a blacklisted target in.
-func TestResolveInputFollowsSymlinksBeforeChecking(t *testing.T) {
+// The blacklist check follows links, so a link planted in an ordinary
+// directory cannot smuggle a blacklisted target in.
+func TestResolveInputFollowsSymlinksWhenChecking(t *testing.T) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		t.Skipf("no home directory: %v", err)

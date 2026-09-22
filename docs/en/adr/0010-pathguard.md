@@ -65,6 +65,30 @@ go through) judge the workspace directory with `workdir.Resolver.CheckBeneath` (
 first; `newToolDeps` wires it. A Manager without one refuses every workspace. pathguard v0.2.0 also
 refuses a path holding a NUL byte.
 
+## Amendment (2026-09-22, v0.6.1): whether a file exists never changes the answer
+
+`pcap_path` was resolved with `filepath.EvalSymlinks` before the floor judged it, so a file in a
+credential location got `path_not_allowed` when it was there and `pcap_unreadable` when it was not —
+the answer told the caller which secrets exist. A link climbing with `..` split three ways too: judged
+beyond a directory, "not a directory" past a file, "no such file" past nothing. It is the class the
+independent reviews of slack-mcp-extender and chrome-pilot-mcp found; here it was measured with the
+home directory redirected to a temporary one (all 7 pairs got different answers).
+
+- `ResolveInput` places the path first (`workdir.Where`, the last of pathguard's `Forms`: every link
+  followed, a dangling one by its target — for a path that exists, what `EvalSymlinks` returns), judges
+  it as given and as placed (`refused`), and only then asks existence of the place
+  (`EvalSymlinks(where)`). When it resolves elsewhere than it was placed (it changed in between), it is
+  judged again there. A refusal's `details.resolved` is the place, which does not depend on existence.
+- A chain of links that does not end is `path_not_allowed` (pathguard's unresolvable), not
+  `pcap_unreadable`.
+- A path that does not resolve gets no branch of its own.
+- `TestExistenceIsNotRevealed` (internal/tools) calls `create_workspace` with the same path while a
+  file is there and after it is removed and compares the whole answer. `TestPlacementCorners` pins a
+  link climbing with `..` and a loop. Four mutations (the old order, the floor removed, existence
+  re-walked from the spelling, no placement) all fail by assertion.
+- The known exception: a hard link to a credential file made elsewhere is refused by identity only
+  while it exists. Whoever can make one already reaches the file.
+
 ## References
 
 - Organization ADR-021 (the work-dir contract of the file-mediated MCP servers)

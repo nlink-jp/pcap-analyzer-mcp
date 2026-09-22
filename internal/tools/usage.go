@@ -94,7 +94,8 @@ func usageDoc(maxBytes, defaultRowLimit int) map[string]any {
 				"(~/.ssh, ~/.aws and the rest of the list gem-agent and lagent use), wherever a " +
 				"link directly inside one of those directories points, and any .env file except " +
 				"its templates — found under any spelling: another case, a link, the path as " +
-				"given or resolved.",
+				"given or resolved — and refused whether or not a file is there, with the same " +
+				"answer either way.",
 			"The capture is mounted read-only into a network-less container and is never " +
 				"copied or modified. Deleting a workspace never deletes the capture.",
 			"Workspaces live on disk, so list_workspaces finds ones from earlier sessions.",
