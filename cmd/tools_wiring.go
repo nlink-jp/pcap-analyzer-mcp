@@ -41,7 +41,7 @@ func newToolDeps(serverCtx context.Context, cfg config.Config, pc tools.Containe
 // mount captures from it into a container and write extracted objects beside
 // the file that sets this server's own limits — on a model's say-so.
 func workDirResolver(cfgPath string) workdir.Resolver {
-	return workdir.Resolver{Denied: serverOwnedDirs(cfgPath)}
+	return workdir.NewResolver(serverOwnedDirs(cfgPath)...)
 }
 
 // serverOwnedDirs lists this server's own config and state directories.
@@ -68,11 +68,11 @@ func workDirResolver(cfgPath string) workdir.Resolver {
 // routinely somewhere broad (`/tmp`, `~/Library/Logs`); denying a tree that
 // wide would refuse work directories callers legitimately use, which is a
 // worse outcome than the one it would prevent.
+//
+// The conventional directory is passed on even when empty (no home): an empty
+// one refuses every call rather than protecting nothing.
 func serverOwnedDirs(cfgPath string) []string {
-	var dirs []string
-	if dir := configDir(); dir != "" {
-		dirs = append(dirs, dir)
-	}
+	dirs := []string{configDir()}
 	if p := config.ResolvePath(cfgPath); p != "" {
 		if abs, err := filepath.Abs(p); err == nil {
 			dirs = append(dirs, filepath.Dir(abs))

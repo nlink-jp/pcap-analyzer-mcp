@@ -1,6 +1,7 @@
 # ADR-0008: work dir は呼び出しごとの `work_dir` で受け取り、`allowed_paths` を廃止する
 
-- Status: Accepted
+- Status: Accepted —— その実装（work dir の検査と入力のブラックリスト）は [ADR-0010](0010-pathguard.ja.md)
+  （nlink-jp/pathguard）で置き換えた
 - Date: 2026-09-13
 - Amends: [ADR-0004](0004-workspace-per-capture.ja.md) の `allowed_paths` 条項
 

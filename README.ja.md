@@ -80,7 +80,8 @@ extract_objects(workspace_id, "http")       →  ファイル抽出（defang + �
 
 システム領域、ホームディレクトリそのもの、資格情報・エージェント制御ファイルの
 位置、および**このサーバー自身の設定ディレクトリ**を `work_dir` に指定した
-呼び出しは、サブディレクトリを含めて `work_dir_denied` で拒否します。対象は
+呼び出しは、サブディレクトリを含め、どんな綴りで渡しても `work_dir_denied` で拒否します
+（判定は [nlink-jp/pathguard](https://github.com/nlink-jp/pathguard) が行います）。対象は
 `~/.config/pcap-analyzer-mcp` と、`--config` / `PCAP_ANALYZER_MCP_CONFIG` で
 設定ファイルを指している場合はそれを置いたディレクトリです —— 設定ファイルは
 作業にも使うディレクトリではなく、専用のディレクトリに置いてください。

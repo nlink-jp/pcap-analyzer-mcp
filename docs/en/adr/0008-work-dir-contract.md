@@ -1,6 +1,7 @@
 # ADR-0008: Take the work directory as a per-call `work_dir`, and delete `allowed_paths`
 
-- Status: Accepted
+- Status: Accepted — its implementation (the work-directory checks and the input blacklist) is
+  replaced by [ADR-0010](0010-pathguard.md) (nlink-jp/pathguard)
 - Date: 2026-09-13
 - Amends: the `allowed_paths` clause of [ADR-0004](0004-workspace-per-capture.md)
 

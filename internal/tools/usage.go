@@ -90,8 +90,11 @@ func usageDoc(maxBytes, defaultRowLimit int) map[string]any {
 				"It is required and has no default, and the pair (work_dir, workspace_id) is " +
 				"a workspace's whole address — this server keeps nothing across restarts.",
 			"pcap_path may be anywhere you can read, and the capture is not copied. The only " +
-				"refused locations are credential and agent-control directories such as " +
-				"~/.ssh and ~/.aws.",
+				"refused locations are the credential and agent-control places under your home " +
+				"(~/.ssh, ~/.aws and the rest of the list gem-agent and lagent use), wherever a " +
+				"link directly inside one of those directories points, and any .env file except " +
+				"its templates — found under any spelling: another case, a link, the path as " +
+				"given or resolved.",
 			"The capture is mounted read-only into a network-less container and is never " +
 				"copied or modified. Deleting a workspace never deletes the capture.",
 			"Workspaces live on disk, so list_workspaces finds ones from earlier sessions.",
@@ -158,7 +161,7 @@ func usageDoc(maxBytes, defaultRowLimit int) map[string]any {
 			"work_dir_invalid":      "Not absolute, started with ~, or contained `..`.",
 			"work_dir_not_found":    "The directory is not there, or is not a directory. It is yours, so this is a typo — this server does not create it.",
 			"work_dir_not_writable": "This server cannot write there.",
-			"work_dir_denied":       "A system location, your home directory itself, a credential directory, or one of this server's own config directories (~/.config/pcap-analyzer-mcp, or the directory holding the config file in use).",
+			"work_dir_denied":       "A system location, your home directory itself, a credential or agent-control location (or where a link directly inside one points), one of this server's own config directories (~/.config/pcap-analyzer-mcp, or the directory holding the config file in use) — under any spelling — or the home directory cannot be determined. details.reason says which: system_dir, home_dir, sensitive_path, server_dir, home_unknown, unconfigured, unresolvable_path.",
 			"container_failed":      "podman could not run. `pcap-analyzer-mcp doctor` diagnoses this.",
 			"payload_unavailable_truncated_capture": "The capture has no payload to extract. " +
 				"This is a property of the evidence; retrying will not change it. Note that a " +

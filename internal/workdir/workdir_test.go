@@ -13,6 +13,11 @@ import (
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/toolerr"
 )
 
+// The judgement is nlink-jp/pathguard's and tested there. These tests cover
+// what this adapter owns — taking _meta from the context, carrying errors onto
+// toolerr, the server's own directory, a zero value refusing — and the
+// behaviour this server's callers rely on.
+
 func code(t *testing.T, err error) string {
 	t.Helper()
 	var te *toolerr.Error
@@ -32,12 +37,17 @@ func metaCtx(t *testing.T, value any) context.Context {
 		map[string]json.RawMessage{MetaKey: raw})
 }
 
+func resolver(t *testing.T) Resolver {
+	t.Helper()
+	return NewResolver(t.TempDir())
+}
+
 // TestResolveArgumentWins: the argument is the caller's own statement of where
 // it can read files back; a runtime hint is a default beneath it.
 func TestResolveArgumentWins(t *testing.T) {
 	arg := t.TempDir()
 	hint := t.TempDir()
-	got, err := Resolver{}.Resolve(metaCtx(t, hint), arg)
+	got, err := resolver(t).Resolve(metaCtx(t, hint), arg)
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -48,7 +58,7 @@ func TestResolveArgumentWins(t *testing.T) {
 
 func TestResolveFallsBackToRequestMeta(t *testing.T) {
 	hint := t.TempDir()
-	got, err := Resolver{}.Resolve(metaCtx(t, hint), "")
+	got, err := resolver(t).Resolve(metaCtx(t, hint), "")
 	if err != nil {
 		t.Fatalf("Resolve: %v", err)
 	}
@@ -58,21 +68,23 @@ func TestResolveFallsBackToRequestMeta(t *testing.T) {
 }
 
 // TestResolveWithoutEitherChannelIsAnError pins the whole point of the
-// contract: there is no server-owned default to fall through to, because a
-// destination the caller cannot read back turns a successful call into a path
-// to nothing.
+// contract: there is no server-owned default to fall through to. The message
+// keeps this server's sentence word for word.
 func TestResolveWithoutEitherChannelIsAnError(t *testing.T) {
-	_, err := Resolver{}.Resolve(context.Background(), "")
+	_, err := resolver(t).Resolve(context.Background(), "")
 	if got := code(t, err); got != toolerr.CodeWorkDirRequired {
 		t.Errorf("code = %q, want %q", got, toolerr.CodeWorkDirRequired)
 	}
-	if !strings.Contains(err.Error(), "read back") {
-		t.Errorf("message does not say what to pass: %v", err)
+	want := "work_dir is required: pass the absolute path of a directory you can read back " +
+		"(your session or working directory). Results come back as paths, and a path you cannot open is worth nothing."
+	var te *toolerr.Error
+	if errors.As(err, &te) && te.Message != want {
+		t.Errorf("message = %q\nwant      %q", te.Message, want)
 	}
 }
 
 func TestResolveRejectsNonStringMeta(t *testing.T) {
-	_, err := Resolver{}.Resolve(metaCtx(t, 42), "")
+	_, err := resolver(t).Resolve(metaCtx(t, 42), "")
 	if got := code(t, err); got != toolerr.CodeWorkDirInvalid {
 		t.Errorf("code = %q, want %q", got, toolerr.CodeWorkDirInvalid)
 	}
@@ -103,9 +115,10 @@ func TestValidate(t *testing.T) {
 		{"filesystem root", "/", toolerr.CodeWorkDirDenied},
 		{"home itself", home, toolerr.CodeWorkDirDenied},
 	}
+	r := resolver(t)
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, err := Resolver{}.Validate(c.in)
+			_, err := r.Validate(c.in)
 			if err == nil {
 				t.Fatalf("Validate(%q) succeeded", c.in)
 			}
@@ -121,7 +134,7 @@ func TestValidate(t *testing.T) {
 // and Codex names exactly that as a place it can write.
 func TestValidateAcceptsATemporaryDirectory(t *testing.T) {
 	dir := t.TempDir()
-	got, err := Resolver{}.Validate(dir)
+	got, err := resolver(t).Validate(dir)
 	if err != nil {
 		t.Fatalf("Validate(%q): %v", dir, err)
 	}
@@ -130,26 +143,45 @@ func TestValidateAcceptsATemporaryDirectory(t *testing.T) {
 	}
 }
 
-func TestValidateRefusesServerOwnedDirectories(t *testing.T) {
-	own := t.TempDir()
+// The server's own data directory is refused as a work directory, under any
+// spelling, with the reason in the details; a sibling sharing its prefix is
+// not.
+func TestValidateRefusesTheServersOwnDirectory(t *testing.T) {
+	own := resolve(t, t.TempDir())
 	inside := filepath.Join(own, "workspaces")
 	if err := os.Mkdir(inside, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	r := Resolver{Denied: []string{own}}
-	for _, dir := range []string{own, inside} {
-		if _, err := r.Validate(dir); code(t, err) != toolerr.CodeWorkDirDenied {
+	r := NewResolver(own)
+	for _, dir := range []string{own, inside, strings.ToUpper(inside)} {
+		_, err := r.Validate(dir)
+		if code(t, err) != toolerr.CodeWorkDirDenied {
 			t.Errorf("Validate(%q) = %v, want work_dir_denied", dir, err)
+			continue
+		}
+		var te *toolerr.Error
+		if errors.As(err, &te) && te.Details["reason"] != "server_dir" {
+			t.Errorf("Validate(%q) details = %v, want reason server_dir", dir, te.Details)
 		}
 	}
-	// A sibling of the denied tree is not denied by prefix alone.
 	sibling := own + "-elsewhere"
 	if err := os.Mkdir(sibling, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	defer os.RemoveAll(sibling)
+	t.Cleanup(func() { _ = os.Remove(sibling) })
 	if _, err := r.Validate(sibling); err != nil {
 		t.Errorf("Validate(%q) = %v, want accepted", sibling, err)
+	}
+}
+
+// A resolver that was never built refuses rather than protecting nothing, and
+// so does one given an empty server directory.
+func TestAResolverThatWasNotBuiltRefuses(t *testing.T) {
+	dir := t.TempDir()
+	for name, r := range map[string]Resolver{"zero": {}, "empty server dir": NewResolver("")} {
+		if _, err := r.Validate(dir); code(t, err) != toolerr.CodeWorkDirDenied {
+			t.Errorf("%s: Validate = %v, want work_dir_denied", name, err)
+		}
 	}
 }
 
@@ -161,7 +193,7 @@ func TestValidateRejectsUnwritableDirectory(t *testing.T) {
 	if err := os.Mkdir(dir, 0o500); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := (Resolver{}).Validate(dir); code(t, err) != toolerr.CodeWorkDirNotWritable {
+	if _, err := resolver(t).Validate(dir); code(t, err) != toolerr.CodeWorkDirNotWritable {
 		t.Errorf("Validate(%q) = %v, want work_dir_not_writable", dir, err)
 	}
 }
@@ -177,49 +209,42 @@ func resolve(t *testing.T, dir string) string {
 	return got
 }
 
-// TestSensitiveNamesTheCredentialLocations covers the input blacklist, which
-// this server is the first to need: pcap_path is an absolute host path, so the
-// floor has to hold here or it holds nowhere.
+// TestSensitiveNamesTheCredentialLocations covers the read blacklist:
+// pcap_path is an absolute host path, so the floor has to hold here. The list is the runtimes' (~/.kube, ~/.netrc are new with ADR-0010).
 func TestSensitiveNamesTheCredentialLocations(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Skipf("no home directory: %v", err)
-	}
-	if h, herr := filepath.EvalSymlinks(home); herr == nil {
-		home = h
-	}
-	for _, rel := range []string{".ssh", ".ssh/id_rsa", ".aws/credentials", ".gnupg", ".config/gcloud/x", ".claude/settings.json", ".codex/auth.json", "Library/Keychains/login.keychain-db"} {
+	home := resolve(t, t.TempDir())
+	t.Setenv("HOME", home)
+	for _, rel := range []string{".ssh", ".ssh/id_rsa", ".aws/credentials", ".gnupg", ".config/gcloud/x",
+		".claude/settings.json", ".codex/auth.json", "Library/Keychains/login.keychain-db",
+		".kube/config", ".netrc", ".config/gh/hosts.yml", ".SSH/id_rsa"} {
 		if why := Sensitive(filepath.Join(home, rel)); why == "" {
 			t.Errorf("Sensitive(~/%s) = \"\", want a reason", rel)
 		}
 	}
-	for _, p := range []string{filepath.Join(home, "Downloads", "capture.pcapng"), "/private/tmp/x.pcap"} {
+	// The Local policy: a credential name outside your home is not a secret of
+	// yours — an evidence copy, a project's .npmrc (the Outbound policy would
+	// refuse these).
+	for _, p := range []string{filepath.Join(home, "Downloads", "capture.pcapng"), "/private/tmp/x.pcap",
+		"/srv/evidence/home/bob/.ssh/id_rsa", "/srv/app/.npmrc", "/srv/x/credentials.json"} {
 		if why := Sensitive(p); why != "" {
 			t.Errorf("Sensitive(%q) = %q, want it accepted", p, why)
 		}
 	}
 }
 
-func TestSensitiveCatchesDotEnvAnywhere(t *testing.T) {
-	for _, p := range []string{"/srv/app/.env", "/srv/app/.env.production"} {
+// A .env file holds credentials wherever it sits; its committed templates do
+// not.
+func TestSensitiveCatchesDotEnvAnywhereButItsTemplates(t *testing.T) {
+	t.Setenv("HOME", resolve(t, t.TempDir()))
+	for _, p := range []string{"/srv/app/.env", "/srv/app/.env.production", "/srv/app/.ENV"} {
 		if why := Sensitive(p); why == "" {
 			t.Errorf("Sensitive(%q) = \"\", want a reason", p)
 		}
 	}
-	if why := Sensitive("/srv/app/environment.csv"); why != "" {
-		t.Errorf("a file merely starting with 'env' must be accepted, got %q", why)
-	}
-}
-
-// A sibling directory must not be admitted by prefix alone: /data-evil is not
-// inside /data. The allowlist this replaced had the same property and a test
-// for it; the property moved, so the test moves with it.
-func TestWithinDoesNotAdmitSiblings(t *testing.T) {
-	if within("/data-evil/c.pcap", "/data") {
-		t.Error("/data must not admit /data-evil")
-	}
-	if !within("/data/c.pcap", "/data") || !within("/data", "/data") {
-		t.Error("/data must admit itself and its children")
+	for _, p := range []string{"/srv/app/environment.csv", "/srv/app/.env.example"} {
+		if why := Sensitive(p); why != "" {
+			t.Errorf("Sensitive(%q) = %q, want it accepted", p, why)
+		}
 	}
 }
 
@@ -228,8 +253,9 @@ func TestWithinDoesNotAdmitSiblings(t *testing.T) {
 // symlink into a cloud-sync folder, so resolving the path first made it stop
 // looking like ~/.ssh and the check passed a private key straight through.
 func TestSensitiveWhenTheBlacklistedTreeIsItselfASymlink(t *testing.T) {
-	home := t.TempDir()
-	real := filepath.Join(t.TempDir(), "synced-ssh")
+	home := resolve(t, t.TempDir())
+	t.Setenv("HOME", home)
+	real := filepath.Join(resolve(t, t.TempDir()), "synced-ssh")
 	if err := os.MkdirAll(real, 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -240,22 +266,28 @@ func TestSensitiveWhenTheBlacklistedTreeIsItselfASymlink(t *testing.T) {
 	if err := os.WriteFile(key, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-
-	// Named through the link, and named at its real location: both refused.
-	viaLink := filepath.Join(home, ".ssh", "id_rsa")
-	if why := sensitiveIn(home, []string{viaLink}); why == "" {
-		t.Error("a key named through the ~/.ssh symlink must be refused")
-	}
-	if why := sensitiveIn(home, []string{key}); why == "" {
-		t.Error("a key named at the symlink's target must be refused")
-	}
-	// And the other direction still holds: a link planted elsewhere that
-	// points into the tree is refused too.
-	planted := filepath.Join(t.TempDir(), "innocent.pcap")
+	planted := filepath.Join(resolve(t, t.TempDir()), "innocent.pcap")
 	if err := os.Symlink(key, planted); err != nil {
 		t.Skipf("symlinks unavailable: %v", err)
 	}
-	if why := sensitiveIn(home, []string{planted}); why == "" {
-		t.Error("a planted link into the blacklisted tree must be refused")
+	for name, p := range map[string]string{
+		"through the ~/.ssh link": filepath.Join(home, ".ssh", "id_rsa"),
+		"at the link's target":    key,
+		"through a planted link":  planted,
+	} {
+		if why := Sensitive(p); why == "" {
+			t.Errorf("a key named %s must be refused", name)
+		}
+	}
+}
+
+// Every server directory given is protected, not only the first.
+func TestEveryServerDirectoryIsProtected(t *testing.T) {
+	a, b := resolve(t, t.TempDir()), resolve(t, t.TempDir())
+	r := NewResolver(a, b)
+	for _, dir := range []string{a, b} {
+		if _, err := r.Validate(dir); code(t, err) != toolerr.CodeWorkDirDenied {
+			t.Errorf("Validate(%q) = %v, want work_dir_denied", dir, err)
+		}
 	}
 }

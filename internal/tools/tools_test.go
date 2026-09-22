@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -13,6 +15,7 @@ import (
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/mcpserver"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/podman"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/toolerr"
+	"github.com/nlink-jp/pcap-analyzer-mcp/internal/workdir"
 	"github.com/nlink-jp/pcap-analyzer-mcp/internal/workspace"
 )
 
@@ -49,8 +52,11 @@ func (f *fakeRunner) ImageID(context.Context, string) (string, error) {
 func newDeps(r ContainerRunner) *Deps {
 	cfg := config.Default()
 	return &Deps{
-		Cfg:       cfg,
-		Podman:    r,
+		Cfg:    cfg,
+		Podman: r,
+		// A server directory that need not exist: the tests only need a
+		// resolver that was built (the zero value refuses every call).
+		WorkDir:   workdir.NewResolver(filepath.Join(os.TempDir(), "pcap-analyzer-mcp-test-server-dir")),
 		Workspace: workspace.NewManager(cfg, nil),
 		Jobs:      job.NewManager(cfg.Jobs.MaxConcurrent),
 		ServerCtx: context.Background(),

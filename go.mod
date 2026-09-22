@@ -4,6 +4,7 @@ go 1.23
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	github.com/nlink-jp/pathguard v0.1.0
 	github.com/spf13/cobra v1.8.1
 )
 

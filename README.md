@@ -84,7 +84,9 @@ this server keeps nothing across restarts. It is required and has no default.
 
 A `work_dir` naming a system location, your home directory itself, a
 credential or agent-control location, or **one of this server's own config
-directories** is refused with `work_dir_denied`, subdirectories included.
+directories** is refused with `work_dir_denied`, subdirectories included, under
+any spelling ([nlink-jp/pathguard](https://github.com/nlink-jp/pathguard) makes
+that judgement).
 Those are `~/.config/pcap-analyzer-mcp` and, when `--config` or
 `PCAP_ANALYZER_MCP_CONFIG` names a config file, the directory holding it — so
 give the config file a directory of its own rather than one you also work in.
