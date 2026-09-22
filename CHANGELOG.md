@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-09-22
+
+### Security
+
+- **Whether a capture exists no longer changes the answer.** A `pcap_path` in
+  a credential or agent-control location was refused when the file was there
+  and answered `pcap_unreadable` when it was not, so the answer told the
+  caller which secrets exist. The path is now judged at the place it leads to
+  before anything looks for a file, and a refused place gets the same answer,
+  message and details, either way (ADR-0010, amendment). A chain of links
+  that does not end is now refused (`path_not_allowed`) rather than reported
+  unreadable, and a link climbing with `..` past a file gets the same answer
+  as one climbing past a directory.
+- A refusal names the path only as given: `details.resolved` is gone. It
+  named where the path leads, which differed when an entry on the way is a
+  link, and so said which entries exist and where they lead.
+
+### Changed
+
+- A relative `pcap_path` under a working directory reached through a link is
+  resolved all the way, as its absolute spelling always was, so it gets that
+  spelling's workspace id; re-creating an earlier workspace for it makes a
+  new one.
+- A path with `..` after a file or a missing name is opened where pathguard
+  places it (the `..` applied to what exists) rather than answered "not a
+  directory" / "no such file".
+
 ## [0.6.0] - 2026-09-22
 
 ### Changed
