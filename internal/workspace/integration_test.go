@@ -91,7 +91,7 @@ func TestIntegrationCreateAgainstRealImage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	m := NewManager(cfg, pc)
+	m := NewManager(cfg, pc, func(string) error { return nil })
 	start := time.Now()
 	ws, err := m.Create(context.Background(), pcap, filepath.Join(work, "ws"))
 	elapsed := time.Since(start)
@@ -160,7 +160,7 @@ func TestIntegrationTruncatedCaptureIsDetected(t *testing.T) {
 	}
 	_ = full
 
-	m := NewManager(cfg, pc)
+	m := NewManager(cfg, pc, func(string) error { return nil })
 	ws, err := m.Create(context.Background(), filepath.Join(capDir, "trunc.pcapng"),
 		filepath.Join(work, "ws"))
 	if err != nil {

@@ -50,7 +50,7 @@ func newFixture(t *testing.T) (*Manager, *fakeRunner, string, string) {
 	if err := os.WriteFile(pcap, []byte("not really a pcap"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return NewManager(cfg, r), r, pcap, t.TempDir()
+	return NewManager(cfg, r, allowAll), r, pcap, t.TempDir()
 }
 
 func TestCreateWritesMeta(t *testing.T) {
@@ -149,7 +149,7 @@ func TestCreateMountsCaptureReadOnly(t *testing.T) {
 func TestCreateUsesAFixedContainerPath(t *testing.T) {
 	cfg := config.Default()
 	r := &fakeRunner{stdout: probeOutput()}
-	m := NewManager(cfg, r)
+	m := NewManager(cfg, r, allowAll)
 
 	dir := t.TempDir()
 	pcap := filepath.Join(dir, "--not-a-flag.pcap")
@@ -229,7 +229,7 @@ func TestListSeesWorkspacesFromAnotherManager(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	fresh := NewManager(config.Default(), r)
+	fresh := NewManager(config.Default(), r, allowAll)
 	got, err := fresh.List(root)
 	if err != nil {
 		t.Fatal(err)
@@ -327,5 +327,39 @@ func TestReadMetaRejectsNewerSchema(t *testing.T) {
 	}
 	if _, err := ReadMeta(dir); err == nil {
 		t.Error("a newer schema must be refused, not guessed at")
+	}
+}
+
+// allowAll stands for the server's check in tests of the manager's own
+// mechanics; the check itself is workdir.Resolver.CheckBeneath's.
+func allowAll(string) error { return nil }
+
+// The directory a call actually uses is judged first, in Create and in Load
+// (which PreviewDelete and Delete go through): its refusal is returned as is,
+// and nothing is created, mounted or deleted. A Manager without a check
+// refuses.
+func TestEveryWorkspaceEntryJudgesTheDirectoryFirst(t *testing.T) {
+	m, r, pcap, root := newFixture(t)
+	refusal := errors.New("refused")
+	var seen []string
+	m.check = func(dir string) error { seen = append(seen, dir); return refusal }
+	if _, err := m.Create(context.Background(), pcap, root); !errors.Is(err, refusal) {
+		t.Errorf("Create = %v, want the check's refusal", err)
+	}
+	if _, err := m.Load("gh", root); !errors.Is(err, refusal) {
+		t.Errorf("Load = %v, want the check's refusal", err)
+	}
+	if _, err := m.Delete("gh", root); !errors.Is(err, refusal) {
+		t.Errorf("Delete = %v, want the check's refusal", err)
+	}
+	if len(seen) != 3 || seen[1] != filepath.Join(root, "gh") {
+		t.Errorf("the check saw %q", seen)
+	}
+	if entries, _ := os.ReadDir(root); len(entries) != 0 {
+		t.Errorf("a refused Create left %d entries under the work directory", len(entries))
+	}
+	_ = r
+	if _, err := NewManager(config.Default(), r, nil).Load("gh", root); err == nil {
+		t.Error("a Manager without a check loaded a workspace")
 	}
 }

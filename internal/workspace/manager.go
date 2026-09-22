@@ -36,11 +36,26 @@ type Runner interface {
 type Manager struct {
 	cfg    config.Config
 	podman Runner
+	check  func(dir string) error
 }
 
-// NewManager returns a Manager bound to a config and a container runner.
-func NewManager(cfg config.Config, r Runner) *Manager {
-	return &Manager{cfg: cfg, podman: r}
+// NewManager returns a Manager bound to a config, a container runner and the
+// workspace check. check judges <work_dir>/<workspace_id> — the directory
+// actually created, mounted and deleted — before any of that: validating
+// work_dir alone let work_dir=~/.config with workspace_id=gh reach
+// ~/.config/gh. The server passes workdir.Resolver.CheckBeneath; a Manager
+// without one refuses every workspace.
+func NewManager(cfg config.Config, r Runner, check func(dir string) error) *Manager {
+	return &Manager{cfg: cfg, podman: r, check: check}
+}
+
+// judge applies the workspace check to a workspace directory.
+func (m *Manager) judge(dir string) error {
+	if m.check == nil {
+		return toolerr.New(toolerr.CodeWorkDirDenied,
+			"this server's workspace check was not set up (workspace.NewManager)")
+	}
+	return m.check(dir)
 }
 
 // Workspace is a located workspace on disk.
@@ -90,6 +105,9 @@ func (m *Manager) Create(ctx context.Context, pcapPath, root string) (*Workspace
 	id := DeriveWorkspaceID(resolved)
 	dir, err := WorkspacePath(root, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := m.judge(dir); err != nil {
 		return nil, err
 	}
 	ws := &Workspace{ID: id, Dir: dir, Root: root}
@@ -193,6 +211,9 @@ func (m *Manager) probe(ctx context.Context, pcapPath, workDir string) (CaptureI
 func (m *Manager) Load(id, root string) (*Workspace, error) {
 	dir, err := WorkspacePath(root, id)
 	if err != nil {
+		return nil, err
+	}
+	if err := m.judge(dir); err != nil {
 		return nil, err
 	}
 	meta, err := ReadMeta(dir)

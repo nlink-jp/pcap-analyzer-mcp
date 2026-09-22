@@ -51,13 +51,14 @@ func (f *fakeRunner) ImageID(context.Context, string) (string, error) {
 
 func newDeps(r ContainerRunner) *Deps {
 	cfg := config.Default()
+	// A server directory that need not exist: the tests only need a
+	// resolver that was built (the zero value refuses every call).
+	resolver := workdir.NewResolver(filepath.Join(os.TempDir(), "pcap-analyzer-mcp-test-server-dir"))
 	return &Deps{
-		Cfg:    cfg,
-		Podman: r,
-		// A server directory that need not exist: the tests only need a
-		// resolver that was built (the zero value refuses every call).
-		WorkDir:   workdir.NewResolver(filepath.Join(os.TempDir(), "pcap-analyzer-mcp-test-server-dir")),
-		Workspace: workspace.NewManager(cfg, nil),
+		Cfg:       cfg,
+		Podman:    r,
+		WorkDir:   resolver,
+		Workspace: workspace.NewManager(cfg, nil, resolver.CheckBeneath),
 		Jobs:      job.NewManager(cfg.Jobs.MaxConcurrent),
 		ServerCtx: context.Background(),
 	}

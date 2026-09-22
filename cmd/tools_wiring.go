@@ -21,12 +21,13 @@ import (
 // directory holding the config file in use is one of the directories denied
 // as a work directory.
 func newToolDeps(serverCtx context.Context, cfg config.Config, pc tools.ContainerRunner, cfgPath string) *tools.Deps {
+	wd := workDirResolver(cfgPath)
 	return &tools.Deps{
 		Cfg:       cfg,
 		Podman:    pc,
-		Workspace: workspace.NewManager(cfg, pc),
+		Workspace: workspace.NewManager(cfg, pc, wd.CheckBeneath),
 		Jobs:      job.NewManager(cfg.Jobs.MaxConcurrent),
-		WorkDir:   workDirResolver(cfgPath),
+		WorkDir:   wd,
 		ServerCtx: serverCtx,
 	}
 }
