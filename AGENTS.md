@@ -26,7 +26,7 @@ real podman.
 - `./samples/generate.sh` — regenerate the sample captures
 - `make runtime-image` — builds the tshark container image (wraps `pcap-analyzer-mcp build-runtime`)
 - `make build-all` — cross-compile darwin/arm64 + linux/{amd64,arm64} + windows/amd64
-- `make verify-release` — gate: .notarized marker + freshness (run before upload)
+- `make verify-release` — gate: notarized, fresh, runs at this version, clean linux archives (run before upload)
 - `make help` — list targets
 
 darwin is **arm64 only** (no amd64, no universal) per CONVENTIONS.md
