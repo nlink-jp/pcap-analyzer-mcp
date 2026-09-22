@@ -24,9 +24,10 @@ import (
 // against "refused" tells the caller which secrets exist (knowledge:
 // security.md, "Compare places by identity, not by name").
 //
-// The layer observed is the tool call, the answer a caller receives; the home
-// directory is a temporary one, so no real credential directory is touched,
-// and the container runner is a fake.
+// The layer observed is the tool call, the answer a caller receives. The home
+// directory is a temporary one: nothing is created, read or written in a real
+// credential directory (pathguard still lists the account's own, for the links
+// inside them), and the container runner is a fake.
 func TestExistenceIsNotRevealed(t *testing.T) {
 	base := realDir(t, t.TempDir())
 	home := filepath.Join(base, "home")
@@ -51,17 +52,25 @@ func TestExistenceIsNotRevealed(t *testing.T) {
 		_, err := call(t, d, "create_workspace", map[string]any{"pcap_path": p, "work_dir": work})
 		return errAnswer(err)
 	}
-	for _, c := range []struct{ name, arg, leaf string }{
-		{"in a credential directory", filepath.Join(home, ".aws", "c.pcap"), filepath.Join(home, ".aws", "c.pcap")},
-		{"through a dotfiles-linked ~/.config", filepath.Join(home, ".config", "gcloud", "c.pcap"), filepath.Join(dot, "gcloud", "c.pcap")},
-		{"a credential file", filepath.Join(home, ".docker", "config.json"), filepath.Join(home, ".docker", "config.json")},
-		{"a planted link to a credential file", filepath.Join(other, "lnk_file.pcap"), filepath.Join(home, ".aws", "planted.pcap")},
-		{"through a planted link to a credential directory", filepath.Join(other, "lnk_dir", "via.pcap"), filepath.Join(home, ".aws", "via.pcap")},
-		{"where a link in ~/.ssh leads", filepath.Join(sync, "ssh_config"), filepath.Join(sync, "ssh_config")},
-		{"a .env file", filepath.Join(other, ".env"), filepath.Join(other, ".env")},
+	for _, c := range []struct{ name, arg, leaf, link string }{
+		{"in a credential directory", filepath.Join(home, ".aws", "c.pcap"), filepath.Join(home, ".aws", "c.pcap"), ""},
+		{"through a dotfiles-linked ~/.config", filepath.Join(home, ".config", "gcloud", "c.pcap"), filepath.Join(dot, "gcloud", "c.pcap"), ""},
+		{"a credential file", filepath.Join(home, ".docker", "config.json"), filepath.Join(home, ".docker", "config.json"), ""},
+		{"a planted link to a credential file", filepath.Join(other, "lnk_file.pcap"), filepath.Join(home, ".aws", "planted.pcap"), ""},
+		{"through a planted link to a credential directory", filepath.Join(other, "lnk_dir", "via.pcap"), filepath.Join(home, ".aws", "via.pcap"), ""},
+		{"where a link in ~/.ssh leads", filepath.Join(sync, "ssh_config"), filepath.Join(sync, "ssh_config"), ""},
+		{"a .env file", filepath.Join(other, ".env"), filepath.Join(other, ".env"), ""},
+		// The entry named is itself a link, there or not: the refusal must not
+		// say where it leads.
+		{"a credential entry that is a link", filepath.Join(home, ".ssh", "linked.pcap"), filepath.Join(home, ".ssh", "linked.pcap"), filepath.Join(sync, "deep", "linked.pcap")},
+		{"in a credential directory that is a link", filepath.Join(home, ".kube", "c.pcap"), filepath.Join(home, ".kube"), filepath.Join(dot, "kube")},
 	} {
 		t.Run(c.name, func(t *testing.T) {
-			writeFileAt(t, c.leaf)
+			if c.link != "" {
+				symlink(t, c.link, c.leaf)
+			} else {
+				writeFileAt(t, c.leaf)
+			}
 			e := answer(c.arg)
 			if err := os.Remove(c.leaf); err != nil {
 				t.Fatal(err)

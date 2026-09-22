@@ -98,12 +98,15 @@ func ResolveInput(path string) (string, error) {
 // refused is the floor on a capture path, as given and at its place. Both
 // spellings go to the check: a blacklisted directory may itself be a symlink
 // (see workdir.Sensitive), so the placed form alone is not enough, and the
-// given form alone would miss a planted link.
+// given form alone would miss a planted link. The refusal names the path only
+// as the caller gave it: the place differs when an entry on the way is a link
+// (~/.ssh/config into a sync folder, a dotfiles-linked ~/.aws), so echoing it
+// would say which entries exist and where they lead.
 func refused(path, where string) error {
 	if why := workdir.Sensitive(path, where); why != "" {
 		return toolerr.Newf(toolerr.CodePathNotAllowed,
 			"%s is refused: %s", path, why).
-			WithDetails(map[string]any{"pcap_path": path, "resolved": where})
+			WithDetails(map[string]any{"pcap_path": path})
 	}
 	return nil
 }
