@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-26
 - Driver: magi
-- Revisions: 2026-07-26 — Decision and Consequences amended after the Track C build (dumpcap removal, measured size, resolved digest)
+- Revisions: 2026-07-26 — Decision and Consequences amended after the Track C build (dumpcap removal, measured size, resolved digest); 2026-10-25 — builds bypass the layer cache so a rebuild takes Debian security updates (v0.6.3)
 - Generalises to: none
 
 ---
@@ -69,6 +69,8 @@ Export formats are **JSONL / CSV**.
 - **parquet cannot be written.** There is no parquet writer in the container, and adding one on the Go side would defeat the lean goal. Exports are limited to JSONL / CSV. data-toolbox-mcp's `load_data` reads both through DuckDB so the handoff works, but it is less efficient than parquet at scale
 - **SQL aggregation requires a second server (data-toolbox-mcp).** Users configure two MCP servers. Furthermore, data-toolbox's `load_data` physically copies host files into `/work/_upload/`, so handing over a huge export triggers a copy. In practice, exports should be filtered down first
 - A digest pin does not pick up tshark security updates automatically. Image updates become an explicit task — accepted as the cost of version pinning
+  - **Amendment (2026-10-25, v0.6.3): the explicit task is `build-runtime --force`, and every build runs `podman build --no-cache`.** Through v0.6.2 the build used the layer cache. The embedded Dockerfile does not change between rebuilds, so a forced rebuild reused the first build's apt layer and kept its packages: after CVE-2026-111497, `libbrotli1` (which tshark links to decompress HTTP bodies) stayed at `1.0.9-2+b6` although bookworm-security shipped `1.0.9-2+deb12u1`. Without the cache, `apt-get install tshark` resolves against the current bookworm and bookworm-security archives, so a rebuild takes the fixes for tshark and every library it pulls in
+  - **Accepted residual: packages that are already in the base image are not upgraded.** The Dockerfile installs tshark but runs no `apt-get upgrade`, so a fix to a package the digest-pinned `debian:12-slim` already contains (libc, for one) needs the digest to move. `libbrotli1` is not in the base image, which is why a rebuild alone fixes it
 - Debian's tshark version lags upstream Wireshark. Needing the newest dissectors would require a separate decision
 
 ## See also

@@ -121,7 +121,7 @@ func TestBuildUsesAnIsolatedContext(t *testing.T) {
 	}
 
 	call := f.lastCall()
-	if !strings.Contains(call, "build -t img:tag -f ") {
+	if !strings.Contains(call, "build --no-cache -t img:tag -f ") {
 		t.Errorf("unexpected argv: %s", call)
 	}
 	if strings.HasSuffix(call, " .") {
@@ -129,6 +129,20 @@ func TestBuildUsesAnIsolatedContext(t *testing.T) {
 	}
 	if out.String() != "STEP 1/7\n" {
 		t.Errorf("build progress not streamed through: %q", out.String())
+	}
+}
+
+// A rebuild exists to take Debian security updates. The Dockerfile text never
+// changes between rebuilds, so a cached build would reuse the first build's apt
+// layer and keep the vulnerable packages (CVE-2026-111497's libbrotli1 was
+// still 1.0.9-2+b6 after `build-runtime --force` through v0.6.2).
+func TestBuildBypassesLayerCache(t *testing.T) {
+	f := &fakeRunner{}
+	if err := NewWithRunner("podman", f).Build(context.Background(), io.Discard, "img", "FROM scratch\n"); err != nil {
+		t.Fatal(err)
+	}
+	if call := f.lastCall(); !strings.Contains(call, " --no-cache ") {
+		t.Errorf("build must not use the layer cache: %s", call)
 	}
 }
 

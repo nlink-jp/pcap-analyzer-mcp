@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`build-runtime --force` now takes Debian security updates.** The build used
+  podman's layer cache, and the embedded Dockerfile does not change between
+  rebuilds, so a forced rebuild reused the first build's apt layer and kept its
+  packages. After CVE-2026-111497 (an out-of-bounds write in the Brotli
+  decoder), the image's `libbrotli1` — which tshark links to decompress HTTP
+  bodies read out of the capture — stayed at the vulnerable `1.0.9-2+b6`
+  although bookworm-security ships `1.0.9-2+deb12u1`. Every build now runs
+  without the cache. **Rebuild the image once:**
+  `pcap-analyzer-mcp build-runtime --force`. tshark stays at 4.0.17. ADR-0003
+  is amended, and records that packages already in the digest-pinned base
+  image are still not upgraded.
+
 - **The Linux archives no longer carry macOS file metadata.** macOS `tar` wrote
   each bundled file's extended attributes (`com.apple.provenance`, and a Dropbox
   attribute where the tree is synced) into the `.tar.gz` twice: as AppleDouble

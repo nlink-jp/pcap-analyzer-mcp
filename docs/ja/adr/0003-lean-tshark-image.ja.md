@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-26
 - Driver: magi
-- Revisions: 2026-07-26 — Track C の実ビルドを受けて Decision と Consequences を改定（dumpcap 削除、実測サイズ、digest 確定）
+- Revisions: 2026-07-26 — Track C の実ビルドを受けて Decision と Consequences を改定（dumpcap 削除、実測サイズ、digest 確定）; 2026-10-25 — 作り直しで Debian のセキュリティ更新を取り込めるよう、ビルドで層キャッシュを使わないことにした（v0.6.3）
 - Generalises to: なし
 
 ---
@@ -73,6 +73,8 @@ WORKDIR /work
 - **parquet を書けない。** コンテナ内に parquet writer が存在せず、Go 側に追加するのは lean の趣旨に反する。エクスポートは JSONL / CSV に限定される。data-toolbox-mcp の `load_data` は DuckDB 経由でどちらも読むため受け渡しは成立するが、大規模データでは parquet より非効率である
 - **SQL 集計には別サーバー（data-toolbox-mcp）が必要になる。** 利用者は 2 つの MCP サーバーを設定することになる。さらに data-toolbox の `load_data` はホストファイルを `/work/_upload/` に物理コピーするため、巨大なエクスポートを渡すと複製が走る。運用上は「エクスポートはフィルタで絞ってから渡す」ことが前提になる
 - digest pin は tshark のセキュリティ更新を自動では取り込まない。イメージ更新は明示的な作業になる（バージョン固定の代償として受け入れる）
+  - **改定（2026-10-25、v0.6.3）: 明示的な作業とは `build-runtime --force` であり、ビルドは常に `podman build --no-cache` で行う。** v0.6.2 までのビルドは層キャッシュを使っていた。同梱の Dockerfile は作り直しの間で変わらないため、強制的に作り直しても最初のビルドの apt の層が再利用され、パッケージが古いまま残った。CVE-2026-111497 の後も、tshark が HTTP 本文の展開に使う `libbrotli1` は、bookworm-security に `1.0.9-2+deb12u1` が出ていたのに `1.0.9-2+b6` のままだった。キャッシュを使わなければ `apt-get install tshark` は現在の bookworm と bookworm-security のアーカイブから解決されるので、作り直せば tshark と、それが引き込むすべてのライブラリの修正が入る
+  - **受け入れる残余: ベースイメージに最初から入っているパッケージは更新しない。** Dockerfile は tshark を入れるだけで `apt-get upgrade` を実行しないため、digest で固定した `debian:12-slim` に含まれるパッケージ（libc など）の修正には digest の更新が要る。`libbrotli1` はベースイメージに含まれないので、作り直しだけで直る
 - Debian の tshark バージョンは Wireshark の最新版に追随しない。最新 dissector が必要な場合は別途検討が要る
 
 ## See also

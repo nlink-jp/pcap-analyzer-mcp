@@ -128,6 +128,11 @@ func (c *Client) ImageID(ctx context.Context, ref string) (string, error) {
 // The Dockerfile is written into an otherwise empty temporary directory that
 // serves as the build context: the analysis image has no COPY or ADD, so
 // handing podman the working directory would only tar up files it never uses.
+//
+// The build never uses the layer cache. The Dockerfile text does not change
+// between rebuilds, so a cached build would reuse the apt layer from the first
+// one and a rebuild would never take a Debian security update — which is the
+// one reason to rebuild an image whose base is pinned (ADR-0003).
 func (c *Client) Build(ctx context.Context, out io.Writer, tag, dockerfile string) error {
 	dir, err := os.MkdirTemp("", "pcap-analyzer-build-")
 	if err != nil {
@@ -140,7 +145,7 @@ func (c *Client) Build(ctx context.Context, out io.Writer, tag, dockerfile strin
 		return fmt.Errorf("write Dockerfile: %w", err)
 	}
 
-	code, err := c.runner.RunStreaming(ctx, out, out, c.binary, "build", "-t", tag, "-f", path, dir)
+	code, err := c.runner.RunStreaming(ctx, out, out, c.binary, "build", "--no-cache", "-t", tag, "-f", path, dir)
 	if err != nil && code == -1 {
 		return &ErrNotInstalled{Err: err}
 	}

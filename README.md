@@ -50,6 +50,17 @@ make build              # → dist/pcap-analyzer-mcp
 make runtime-image      # builds the tshark analysis image locally
 ```
 
+The base image is pinned by digest, so the image never changes on its own.
+To take a Debian security update for tshark or a library it uses, rebuild it:
+
+```bash
+dist/pcap-analyzer-mcp build-runtime --force
+```
+
+Every build starts from scratch, without podman's layer cache, so the packages
+come from Debian's current archive. Through v0.6.2 a rebuild reused the cached
+layer and kept the old packages; rebuild once with v0.6.3 or later.
+
 ## Usage
 
 Register the binary as an MCP server in your client:

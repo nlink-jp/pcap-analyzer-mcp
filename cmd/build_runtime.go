@@ -19,7 +19,12 @@ var buildRuntimeCmd = &cobra.Command{
 
 The image is never pushed to a registry (ADR-0003); every user builds it
 locally. The base image is digest-pinned so the tshark version is fixed
-independently of whatever is installed on the host.`,
+independently of whatever is installed on the host.
+
+Every build starts from scratch, without the layer cache, so the packages apt
+installs come from Debian's current bookworm and bookworm-security archives.
+Run with --force to rebuild an existing image and take a Debian security
+update.`,
 	Args: cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, _ []string) error {
 		cfg, err := config.Load(configPath)
@@ -75,6 +80,6 @@ func short(id string) string {
 
 func init() {
 	buildRuntimeCmd.Flags().BoolVar(&buildRuntimeForce, "force", false,
-		"rebuild even if the image already exists")
+		"rebuild from scratch even if the image already exists (takes Debian security updates)")
 	rootCmd.AddCommand(buildRuntimeCmd)
 }

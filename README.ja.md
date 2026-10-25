@@ -45,6 +45,17 @@ make build              # → dist/pcap-analyzer-mcp
 make runtime-image      # tshark 解析イメージをローカルビルド
 ```
 
+ベースイメージは digest で固定しているため、イメージが勝手に変わることはありません。
+tshark やそれが使うライブラリに Debian のセキュリティ更新が出たら、作り直します。
+
+```bash
+dist/pcap-analyzer-mcp build-runtime --force
+```
+
+ビルドは毎回 podman の層キャッシュを使わずに最初から行うため、パッケージは Debian の
+現在のアーカイブから入ります。v0.6.2 までは作り直してもキャッシュした層が再利用され、
+古いパッケージのまま残っていました。v0.6.3 以降で一度作り直してください。
+
 ## 使い方
 
 MCP クライアントにサーバーとして登録します。
