@@ -5,9 +5,12 @@
 # JSONL/CSV rather than parquet.
 #
 # Pinned by digest, not by tag: `debian:12-slim` moves, and a moving base
-# means the tshark version moves with it. Pinning the version is the entire
-# point of running tshark in a container. internal/runtime/manifest.go carries
-# the same digest and a drift test keeps the two in step.
+# could move to another Debian release and with it another tshark. Within
+# bookworm, tshark and its libraries come from the archive at build time, and
+# that is deliberate: build-runtime builds without the layer cache, so a
+# rebuild takes Debian's security updates (ADR-0003, amended v0.6.3).
+# runtime/manifest.go carries the same digest and a drift test keeps the two in
+# step.
 FROM debian:12-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
 
 # The wireshark-common package asks, via debconf, whether non-superusers
@@ -21,9 +24,15 @@ FROM debian:12-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbf
 # delete the binary outright: nothing here ever captures, and a capture tool
 # that cannot be invoked is better than one that merely lacks privileges.
 # tshark -r does not use dumpcap.
+#
+# Upgrade before installing. Several libraries tshark runs over capture data
+# (zlib, liblzma, libzstd, liblz4, gnutls, gcrypt) are already in the base
+# image, and installing tshark alone would leave them at the digest's versions.
 RUN echo "wireshark-common wireshark-common/install-setuid boolean false" \
       | debconf-set-selections \
- && DEBIAN_FRONTEND=noninteractive apt-get update \
+ && export DEBIAN_FRONTEND=noninteractive \
+ && apt-get update \
+ && apt-get upgrade -y \
  && apt-get install -y --no-install-recommends tshark \
  && rm -f /usr/bin/dumpcap \
  && rm -rf /var/lib/apt/lists/*

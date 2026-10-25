@@ -57,9 +57,11 @@ To take a Debian security update for tshark or a library it uses, rebuild it:
 dist/pcap-analyzer-mcp build-runtime --force
 ```
 
-Every build starts from scratch, without podman's layer cache, so the packages
-come from Debian's current archive. Through v0.6.2 a rebuild reused the cached
-layer and kept the old packages; rebuild once with v0.6.3 or later.
+Every build starts from scratch, without podman's layer cache, and upgrades the
+base image's own packages before installing tshark, so everything in the image
+comes from Debian's current archive. Through v0.6.2 a rebuild reused the cached
+layer and kept the old packages; rebuild once with v0.6.3 or later. The
+previous image stays behind untagged; `podman image prune` removes it.
 
 ## Usage
 

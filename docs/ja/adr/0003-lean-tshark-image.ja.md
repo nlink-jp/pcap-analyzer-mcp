@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-26
 - Driver: magi
-- Revisions: 2026-07-26 — Track C の実ビルドを受けて Decision と Consequences を改定（dumpcap 削除、実測サイズ、digest 確定）; 2026-10-25 — 作り直しで Debian のセキュリティ更新を取り込めるよう、ビルドで層キャッシュを使わないことにした（v0.6.3）
+- Revisions: 2026-07-26 — Track C の実ビルドを受けて Decision と Consequences を改定（dumpcap 削除、実測サイズ、digest 確定）; 2026-10-25 — 作り直しで Debian のセキュリティ更新を取り込めるよう、ビルドで層キャッシュを使わず、ベースイメージのパッケージも更新することにした（v0.6.3）
 - Generalises to: なし
 
 ---
@@ -36,7 +36,9 @@ FROM debian:12-slim@sha256:7b140f37...    # digest pin（実際の値は runtime
 # 付かないだけ）ため、バイナリごと削除する。tshark -r は dumpcap を使わない。
 RUN echo "wireshark-common wireshark-common/install-setuid boolean false" \
       | debconf-set-selections \
- && DEBIAN_FRONTEND=noninteractive apt-get update \
+ && export DEBIAN_FRONTEND=noninteractive \
+ && apt-get update \
+ && apt-get upgrade -y \
  && apt-get install -y --no-install-recommends tshark \
  && rm -f /usr/bin/dumpcap \
  && rm -rf /var/lib/apt/lists/*
@@ -74,7 +76,9 @@ WORKDIR /work
 - **SQL 集計には別サーバー（data-toolbox-mcp）が必要になる。** 利用者は 2 つの MCP サーバーを設定することになる。さらに data-toolbox の `load_data` はホストファイルを `/work/_upload/` に物理コピーするため、巨大なエクスポートを渡すと複製が走る。運用上は「エクスポートはフィルタで絞ってから渡す」ことが前提になる
 - digest pin は tshark のセキュリティ更新を自動では取り込まない。イメージ更新は明示的な作業になる（バージョン固定の代償として受け入れる）
   - **改定（2026-10-25、v0.6.3）: 明示的な作業とは `build-runtime --force` であり、ビルドは常に `podman build --no-cache` で行う。** v0.6.2 までのビルドは層キャッシュを使っていた。同梱の Dockerfile は作り直しの間で変わらないため、強制的に作り直しても最初のビルドの apt の層が再利用され、パッケージが古いまま残った。CVE-2026-111497 の後も、tshark が HTTP 本文の展開に使う `libbrotli1` は、bookworm-security に `1.0.9-2+deb12u1` が出ていたのに `1.0.9-2+b6` のままだった。キャッシュを使わなければ `apt-get install tshark` は現在の bookworm と bookworm-security のアーカイブから解決されるので、作り直せば tshark と、それが引き込むすべてのライブラリの修正が入る
-  - **受け入れる残余: ベースイメージに最初から入っているパッケージは更新しない。** Dockerfile は tshark を入れるだけで `apt-get upgrade` を実行しないため、digest で固定した `debian:12-slim` に含まれるパッケージ（libc など）の修正には digest の更新が要る。`libbrotli1` はベースイメージに含まれないので、作り直しだけで直る
+  - **ビルドは tshark を入れる前に `apt-get upgrade -y` も実行する。** tshark を入れるだけでは、digest で固定した `debian:12-slim` に最初から入っているパッケージには手が付かない。tshark がキャプチャのデータを処理するときに使うライブラリの多く（zlib・liblzma・libzstd・liblz4・gnutls・gcrypt）がそこに含まれる。upgrade なしで作り直したイメージでは、libwireshark がリンクする `liblzma5` が、bookworm-security に `5.4.1-1+deb12u2` があるのに `5.4.1-1+deb12u1` のままだった。upgrade を入れると、作り直した後に更新できるパッケージは残らない
+  - **digest pin が固定するのは Debian のリリースであって、個々のパッケージの版ではない。** tshark はビルド時に bookworm のアーカイブから入るので、作り直すたびに解決し直される。bookworm は tshark を 4.0.17 に保ち、変えるのはセキュリティ修正のときだけで、それこそ作り直しで取り込みたい変化である。万一 Debian が bookworm の中で wireshark の版を上げたら、`runtime/manifest.go` の `TsharkVersion` とエクスポート対象の一覧を確かめ直す。どのビルドが結果を出したかは、ワークスペースごとに記録するイメージ ID で分かる
+  - **強制的に作り直すと、前のイメージがタグなしで残る。** 新しいビルドは別の ID になるためである。`podman image prune` で消せる
 - Debian の tshark バージョンは Wireshark の最新版に追随しない。最新 dissector が必要な場合は別途検討が要る
 
 ## See also

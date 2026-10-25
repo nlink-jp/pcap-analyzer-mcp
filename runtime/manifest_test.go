@@ -52,6 +52,25 @@ func TestDockerfileKeepsTempOnTheWritableMount(t *testing.T) {
 	}
 }
 
+// A rebuild must take security fixes for the libraries tshark runs over capture
+// data, and several of them (zlib, liblzma, gnutls, ...) are already in the
+// base image, where installing tshark alone never touches them. After
+// CVE-2026-111497 a rebuilt image still held a liblzma5 that bookworm-security
+// had replaced (ADR-0003, amended v0.6.3).
+func TestDockerfileUpgradesBaseBeforeInstall(t *testing.T) {
+	upgrade := strings.Index(Dockerfile, "apt-get upgrade -y")
+	install := strings.Index(Dockerfile, "apt-get install -y --no-install-recommends tshark")
+	if upgrade < 0 {
+		t.Fatal("the Dockerfile must run apt-get upgrade -y")
+	}
+	if install < 0 || upgrade > install {
+		t.Error("apt-get upgrade must come before installing tshark")
+	}
+	if !strings.Contains(Dockerfile, "export DEBIAN_FRONTEND=noninteractive") {
+		t.Error("DEBIAN_FRONTEND must cover every apt-get call in the RUN, not only the first")
+	}
+}
+
 // Installing tshark pulls in wireshark-common, which is where capinfos,
 // editcap, mergecap and text2pcap come from. The manifest advertises them, so
 // nothing may be claimed that the install does not provide.

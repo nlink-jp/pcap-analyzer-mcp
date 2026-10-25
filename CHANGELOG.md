@@ -18,8 +18,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   although bookworm-security ships `1.0.9-2+deb12u1`. Every build now runs
   without the cache. **Rebuild the image once:**
   `pcap-analyzer-mcp build-runtime --force`. tshark stays at 4.0.17. ADR-0003
-  is amended, and records that packages already in the digest-pinned base
-  image are still not upgraded.
+  is amended. The previous image stays behind untagged; `podman image prune`
+  removes it.
+- **The image build upgrades the base image's own packages.** Installing tshark
+  never touched packages the digest-pinned `debian:12-slim` already contains,
+  and several libraries tshark runs over capture data are among them (zlib,
+  liblzma, libzstd, liblz4, gnutls, gcrypt). A rebuild without the upgrade
+  still held `liblzma5` `5.4.1-1+deb12u1` although bookworm-security ships
+  `+deb12u2`. The Dockerfile now runs `apt-get upgrade -y` before installing
+  tshark, and `DEBIAN_FRONTEND=noninteractive` covers every apt call in it.
 
 - **The Linux archives no longer carry macOS file metadata.** macOS `tar` wrote
   each bundled file's extended attributes (`com.apple.provenance`, and a Dropbox

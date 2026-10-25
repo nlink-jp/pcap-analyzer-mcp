@@ -3,7 +3,7 @@
 - Status: Accepted
 - Date: 2026-07-26
 - Driver: magi
-- Revisions: 2026-07-26 — Decision and Consequences amended after the Track C build (dumpcap removal, measured size, resolved digest); 2026-10-25 — builds bypass the layer cache so a rebuild takes Debian security updates (v0.6.3)
+- Revisions: 2026-07-26 — Decision and Consequences amended after the Track C build (dumpcap removal, measured size, resolved digest); 2026-10-25 — builds bypass the layer cache and upgrade the base image's packages, so a rebuild takes Debian security updates (v0.6.3)
 - Generalises to: none
 
 ---
@@ -36,7 +36,9 @@ FROM debian:12-slim@sha256:7b140f37...    # digest pin (real value in runtime/Do
 # without its setuid bit, so delete it outright. tshark -r does not use it.
 RUN echo "wireshark-common wireshark-common/install-setuid boolean false" \
       | debconf-set-selections \
- && DEBIAN_FRONTEND=noninteractive apt-get update \
+ && export DEBIAN_FRONTEND=noninteractive \
+ && apt-get update \
+ && apt-get upgrade -y \
  && apt-get install -y --no-install-recommends tshark \
  && rm -f /usr/bin/dumpcap \
  && rm -rf /var/lib/apt/lists/*
@@ -70,7 +72,9 @@ Export formats are **JSONL / CSV**.
 - **SQL aggregation requires a second server (data-toolbox-mcp).** Users configure two MCP servers. Furthermore, data-toolbox's `load_data` physically copies host files into `/work/_upload/`, so handing over a huge export triggers a copy. In practice, exports should be filtered down first
 - A digest pin does not pick up tshark security updates automatically. Image updates become an explicit task — accepted as the cost of version pinning
   - **Amendment (2026-10-25, v0.6.3): the explicit task is `build-runtime --force`, and every build runs `podman build --no-cache`.** Through v0.6.2 the build used the layer cache. The embedded Dockerfile does not change between rebuilds, so a forced rebuild reused the first build's apt layer and kept its packages: after CVE-2026-111497, `libbrotli1` (which tshark links to decompress HTTP bodies) stayed at `1.0.9-2+b6` although bookworm-security shipped `1.0.9-2+deb12u1`. Without the cache, `apt-get install tshark` resolves against the current bookworm and bookworm-security archives, so a rebuild takes the fixes for tshark and every library it pulls in
-  - **Accepted residual: packages that are already in the base image are not upgraded.** The Dockerfile installs tshark but runs no `apt-get upgrade`, so a fix to a package the digest-pinned `debian:12-slim` already contains (libc, for one) needs the digest to move. `libbrotli1` is not in the base image, which is why a rebuild alone fixes it
+  - **The build also runs `apt-get upgrade -y` before installing tshark.** Installing tshark alone never touches a package the digest-pinned `debian:12-slim` already contains, and several libraries tshark runs over capture data are among them: zlib, liblzma, libzstd, liblz4, gnutls, gcrypt. In the image rebuilt without the upgrade, `liblzma5` (linked by libwireshark) was still `5.4.1-1+deb12u1` while bookworm-security had `5.4.1-1+deb12u2`. With it, nothing is left upgradable after a rebuild
+  - **What the digest pin still fixes is the Debian release, not every package version.** tshark comes from bookworm's archive at build time, so a rebuild resolves it again. bookworm holds tshark at 4.0.17 and changes it only for security fixes, which is the movement a rebuild is for. If Debian ever rebases wireshark within bookworm, `TsharkVersion` in `runtime/manifest.go` and the export-object list need re-checking; the per-workspace record of the image ID shows which build produced a result
+  - **A forced rebuild leaves the previous image behind** as an untagged image, since the new build has a new ID. `podman image prune` removes it
 - Debian's tshark version lags upstream Wireshark. Needing the newest dissectors would require a separate decision
 
 ## See also

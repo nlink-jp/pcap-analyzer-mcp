@@ -15,7 +15,10 @@ const BaseImage = "debian:12-slim"
 // whenever you touch it.
 const BaseImageDigest = "sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818"
 
-// TsharkVersion is the tshark shipped by the pinned base image.
+// TsharkVersion is the tshark that bookworm's archive installs on top of the
+// pinned base image. A rebuild resolves it again (builds bypass the layer
+// cache, ADR-0003), so re-check it if Debian ever rebases wireshark in
+// bookworm.
 const TsharkVersion = "4.0.17"
 
 // Manifest is the static description of the analysis runtime, returned by
