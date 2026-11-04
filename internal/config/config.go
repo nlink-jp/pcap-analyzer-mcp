@@ -7,13 +7,14 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/BurntSushi/toml"
+	"github.com/nlink-jp/toml"
 )
 
 // Duration is a time.Duration that decodes from a TOML string such as "30m".
@@ -255,12 +256,15 @@ func Load(path string) (Config, error) {
 	}
 	// Decoding onto the defaults means an absent key keeps its default
 	// rather than becoming a zero value.
-	md, err := toml.Decode(string(data), &cfg)
-	if err != nil {
+	_, err = toml.Decode(string(data), &cfg)
+	var unknown *toml.UnknownKeysError
+	if err != nil && !errors.As(err, &unknown) {
 		return Config{}, fmt.Errorf("parse config %s: %w", path, err)
 	}
-	if err := rejectUnknownKeys(path, md.Undecoded()); err != nil {
-		return Config{}, err
+	if unknown != nil {
+		if err := rejectUnknownKeys(path, unknown.Keys); err != nil {
+			return Config{}, err
+		}
 	}
 
 	cfg.normalize()
