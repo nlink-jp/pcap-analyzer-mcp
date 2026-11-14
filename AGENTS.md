@@ -26,6 +26,7 @@ real podman.
 - `./samples/generate.sh` — regenerate the sample captures
 - `make runtime-image` — builds the tshark container image (wraps `pcap-analyzer-mcp build-runtime`)
 - `make build-all` — cross-compile darwin/arm64 + linux/{amd64,arm64} + windows/amd64
+- `make vuln` — govulncheck over the build; `make package` runs it first and stops on a finding
 - `make verify-release` — gate: notarized, fresh, runs at this version, clean linux archives (run before upload)
 - `make help` — list targets
 
